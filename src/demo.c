@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include "network.h"
 #include "detection_layer.h"
 #include "region_layer.h"
@@ -8,10 +9,15 @@
 #include "image.h"
 #include "demo.h"
 #include <sys/time.h>
+#include <unistd.h>
 
 #define DEMO 1
 
 #ifdef OPENCV
+
+#define iteration 100
+#define start_log 25
+#define cycle 3
 
 static char **demo_names;
 static image **demo_alphabet;
@@ -34,6 +40,36 @@ static float *avg;
 static int demo_done = 0;
 static int demo_total = 0;
 double demo_time;
+
+static double image_waiting_array[iteration];
+static double fetch_array[iteration];
+static double detect_array[iteration];
+static double display_array[iteration];
+static double slack[iteration];
+static double fps_array[iteration];
+static double latency[iteration];
+
+static int count=0;
+
+float camera_fps=0;
+float *ptr_camera_fps=&camera_fps;
+long int frame_number[3];
+double frame_timestamp[3];
+static double detect_start;
+static double detect_end;
+static double detect_time;
+static double display_time;
+static double fetch_start;
+static double fetch_time;
+static double image_waiting_time;
+static int sleep_time;
+
+double gettimeafterboot()
+{
+	struct timespec time_after_boot;
+	clock_gettime(CLOCK_MONOTONIC,&time_after_boot);
+	return (time_after_boot.tv_sec*1000+time_after_boot.tv_nsec*0.000001);
+}
 
 detection *get_network_boxes(network *net, int w, int h, float thresh, float hier, int *map, int relative, int *num);
 
@@ -84,6 +120,7 @@ detection *avg_predictions(network *net, int *nboxes)
 
 void *detect_in_thread(void *ptr)
 {
+	detect_start=gettimeafterboot();
     running = 1;
     float nms = .4;
 
@@ -91,36 +128,10 @@ void *detect_in_thread(void *ptr)
     float *X = buff_letter[(buff_index+2)%3].data;
     network_predict(net, X);
 
-    /*
-       if(l.type == DETECTION){
-       get_detection_boxes(l, 1, 1, demo_thresh, probs, boxes, 0);
-       } else */
     remember_network(net);
     detection *dets = 0;
     int nboxes = 0;
     dets = avg_predictions(net, &nboxes);
-
-
-    /*
-       int i,j;
-       box zero = {0};
-       int classes = l.classes;
-       for(i = 0; i < demo_detections; ++i){
-       avg[i].objectness = 0;
-       avg[i].bbox = zero;
-       memset(avg[i].prob, 0, classes*sizeof(float));
-       for(j = 0; j < demo_frame; ++j){
-       axpy_cpu(classes, 1./demo_frame, dets[j][i].prob, 1, avg[i].prob, 1);
-       avg[i].objectness += dets[j][i].objectness * 1./demo_frame;
-       avg[i].bbox.x += dets[j][i].bbox.x * 1./demo_frame;
-       avg[i].bbox.y += dets[j][i].bbox.y * 1./demo_frame;
-       avg[i].bbox.w += dets[j][i].bbox.w * 1./demo_frame;
-       avg[i].bbox.h += dets[j][i].bbox.h * 1./demo_frame;
-       }
-    //copy_cpu(classes, dets[0][i].prob, 1, avg[i].prob, 1);
-    //avg[i].objectness = dets[0][i].objectness;
-    }
-     */
 
     if (nms > 0) do_nms_obj(dets, nboxes, l.classes, nms);
 
@@ -134,24 +145,37 @@ void *detect_in_thread(void *ptr)
 
     demo_index = (demo_index + 1)%demo_frame;
     running = 0;
+	detect_end=gettimeafterboot();
+	detect_time=detect_end-detect_start;
+	if(count>=start_log) detect_array[count-start_log]=detect_time;
     return 0;
 }
 
 void *fetch_in_thread(void *ptr)
 {
+	usleep(sleep_time*1000);
+	fetch_start=gettimeafterboot();
     free_image(buff[buff_index]);
-    buff[buff_index] = get_image_from_stream(cap);
+//    buff[buff_index] = get_image_from_stream(cap);
+    buff[buff_index] = get_image_from_stream_timestamp(cap,frame_timestamp,buff_index);
+	image_waiting_time=frame_timestamp[buff_index]-fetch_start;
+
     if(buff[buff_index].data == 0) {
         demo_done = 1;
         return 0;
     }
     letterbox_image_into(buff[buff_index], net->w, net->h, buff_letter[buff_index]);
+	fetch_time=gettimeafterboot()-fetch_start;
+	if(count>=start_log){
+		fetch_array[count-start_log]=fetch_time;
+		image_waiting_array[count-start_log]=image_waiting_time;
+	}
     return 0;
 }
 
 void *display_in_thread(void *ptr)
 {
-    int c = show_image(buff[(buff_index + 1)%3], "Demo", 1);
+    int c = show_image(buff[(buff_index + 2)%3], "Demo", 1);
     if (c != -1) c = c%256;
     if (c == 27) {
         demo_done = 1;
@@ -167,6 +191,16 @@ void *display_in_thread(void *ptr)
         demo_hier -= .02;
         if(demo_hier <= .0) demo_hier = .0;
     }
+
+	double now_time=gettimeafterboot();
+	display_time=now_time-detect_end;
+	if(count>=start_log){
+		fps_array[count-start_log]=fps;
+   		latency[count-start_log]=now_time-frame_timestamp[(buff_index+2)%3];
+		display_array[count-start_log]=display_time;
+//		printf("latency[%d]: %f\n",count-start_log,latency[count-start_log]);
+		printf("count : %d\n",count);
+	}
     return 0;
 }
 
@@ -213,7 +247,8 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
         printf("video file: %s\n", filename);
         cap = open_video_stream(filename, 0, 0, 0, 0);
     }else{
-        cap = open_video_stream(0, cam_index, w, h, frames);
+        cap = open_video_stream_cam_fps(0, cam_index, w, h, frames, ptr_camera_fps);
+		printf("camera fps : %f\n",camera_fps);
     }
 
     if(!cap) error("Couldn't connect to webcam.\n");
@@ -225,30 +260,83 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
     buff_letter[1] = letterbox_image(buff[0], net->w, net->h);
     buff_letter[2] = letterbox_image(buff[0], net->w, net->h);
 
-    int count = 0;
+
     if(!prefix){
         make_window("Demo", 1352, 1013, fullscreen);
     }
 
-    demo_time = what_time_is_it_now();
+    //demo_time = what_time_is_it_now();
+	demo_time=gettimeafterboot();
+	//sleep_time=160;
+	
+	double image_waiting_sum[cycle]={0};
+	double fetch_sum[cycle]={0};
+	double detect_sum[cycle]={0};
+	double display_sum[cycle]={0};
+	double slack_sum[cycle]={0};
+	double fps_sum[cycle]={0};
+	double latency_sum[cycle]={0};
 
-    while(!demo_done){
-        buff_index = (buff_index + 1) %3;
-        if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
-        if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
-        if(!prefix){
-            fps = 1./(what_time_is_it_now() - demo_time);
-            demo_time = what_time_is_it_now();
-            display_in_thread(0);
-        }else{
-            char name[256];
-            sprintf(name, "%s_%08d", prefix, count);
-            save_image(buff[(buff_index + 1)%3], name);
-        }
-        pthread_join(fetch_thread, 0);
-        pthread_join(detect_thread, 0);
-        ++count;
-    }
+	sleep_time=0;
+
+	for(int iter=0;iter<cycle;iter++){
+	    while(!demo_done){
+	        if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
+	        if(!prefix){
+				fps=1./(gettimeafterboot()-demo_time)*1000;
+				demo_time=gettimeafterboot();
+				detect_in_thread(0);
+				display_in_thread(0);
+	
+	        }else{
+	            char name[256];
+	            sprintf(name, "%s_%08d", prefix, count);
+	            save_image(buff[(buff_index + 2)%3], name);
+	        }
+	        pthread_join(fetch_thread, 0);
+			if(count>=start_log)
+				slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
+			if(count==(iteration+start_log-1)){
+				FILE *fp;
+				char s1[35]="auto_calib/offset_";
+				char s2[4];
+				sprintf(s2,"%d",sleep_time);
+				char s3[5]=".csv";
+				strcat(s1,s2);
+				strcat(s1,s3);
+				
+				fp=fopen(s1,"w+");
+				for(int i=0;i<iteration;i++){
+					image_waiting_sum[iter]+=image_waiting_array[i];
+					fetch_sum[iter]+=fetch_array[i];
+					detect_sum[iter]+=detect_array[i];
+					display_sum[iter]+=display_array[i];
+					slack_sum[iter]+=slack[i];
+					fps_sum[iter]+=fps_array[i];
+					latency_sum[iter]+=latency[i];
+					fprintf(fp,"%f,%f,%f,%f,%f,%f,%f\n",image_waiting_array[i],fetch_array[i],detect_array[i],	display_array[i],slack[i],fps_array[i],latency[i]);
+				}
+				fclose(fp);
+				if(iter==0)
+				sleep_time=(int)detect_sum[0]/iteration-1000./(2*(int)(camera_fps));
+				else 
+					sleep_time=(int)detect_sum[1]/iteration-1000./(2*(int)(camera_fps));
+				break;
+			}
+			count++;
+	    	buff_index = (buff_index + 1) %3;
+	    }
+		count=0;
+	}
+	for(i=0; i<cycle;i++){
+		printf("avg_image_waiting[%d] : %f\n",i,image_waiting_sum[i]/iteration);
+		printf("avg_fetch[%d] : %f\n",i,fetch_sum[i]/iteration);
+		printf("avg_detect[%d] : %f\n",i,detect_sum[i]/iteration);
+		printf("avg_display[%d] : %f\n",i,display_sum[i]/iteration);
+		printf("avg_slack[%d] : %f\n",i,slack_sum[i]/iteration);
+		printf("avg_fps[%d] : %f\n",i,fps_sum[i]/iteration);
+		printf("avg_latency[%d] : %f\n",i,latency_sum[i]/iteration);
+	}
 }
 
 /*

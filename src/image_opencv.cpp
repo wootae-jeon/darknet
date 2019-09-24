@@ -78,12 +78,37 @@ void *open_video_stream(const char *f, int c, int w, int h, int fps)
     return (void *) cap;
 }
 
+void *open_video_stream_cam_fps(const char *f, int c, int w, int h, int fps,float *camera_fps)
+{
+    VideoCapture *cap;
+    if(f) cap = new VideoCapture(f);
+    else cap = new VideoCapture(c);
+    if(!cap->isOpened()) return 0;
+    if(w) cap->set(CV_CAP_PROP_FRAME_WIDTH, w);
+    if(h) cap->set(CV_CAP_PROP_FRAME_HEIGHT, w);
+    if(fps) cap->set(CV_CAP_PROP_FPS, w);
+	*camera_fps=cap->get(CV_CAP_PROP_FPS);
+	printf("image_opencv.cpp fps : %f\n",*camera_fps);
+    return (void *) cap;
+}
+
+
 image get_image_from_stream(void *p)
 {
     VideoCapture *cap = (VideoCapture *)p;
     Mat m;
     *cap >> m;
     if(m.empty()) return make_empty_image(0,0,0);
+    return mat_to_image(m);
+}
+
+image get_image_from_stream_timestamp(void *p,double *frame_timestamp,int buff_index)
+{
+    VideoCapture *cap = (VideoCapture *)p;
+    Mat m;
+    *cap >> m;
+    if(m.empty()) return make_empty_image(0,0,0);
+    *(frame_timestamp+buff_index)=cap->get(CV_CAP_PROP_POS_MSEC);
     return mat_to_image(m);
 }
 
