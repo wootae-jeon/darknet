@@ -15,9 +15,9 @@
 
 #ifdef OPENCV
 
-#define iteration 100
-#define start_log 25
-#define cycle 3
+#define iteration 1000
+#define start_log 30
+#define cycle 1
 
 static char **demo_names;
 static image **demo_alphabet;
@@ -62,7 +62,7 @@ static double display_time;
 static double fetch_start;
 static double fetch_time;
 static double image_waiting_time;
-static int sleep_time;
+static int sleep_time=0;
 
 double gettimeafterboot()
 {
@@ -267,7 +267,6 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 
     //demo_time = what_time_is_it_now();
 	demo_time=gettimeafterboot();
-	//sleep_time=160;
 	
 	double image_waiting_sum[cycle]={0};
 	double fetch_sum[cycle]={0};
@@ -277,8 +276,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 	double fps_sum[cycle]={0};
 	double latency_sum[cycle]={0};
 
-	sleep_time=0;
-
+	
 	for(int iter=0;iter<cycle;iter++){
 	    while(!demo_done){
 	        if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
@@ -298,14 +296,14 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 				slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
 			if(count==(iteration+start_log-1)){
 				FILE *fp;
-				char s1[35]="auto_calib/offset_";
+				char s1[35]="new_xavier/offset_";
 				char s2[4];
 				sprintf(s2,"%d",sleep_time);
 				char s3[5]=".csv";
 				strcat(s1,s2);
 				strcat(s1,s3);
 				
-				fp=fopen(s1,"w+");
+//				fp=fopen(s1,"w+");
 				for(int i=0;i<iteration;i++){
 					image_waiting_sum[iter]+=image_waiting_array[i];
 					fetch_sum[iter]+=fetch_array[i];
@@ -314,11 +312,11 @@ void demo(char *cfgfile, char *weightfile, float thresh, int cam_index, const ch
 					slack_sum[iter]+=slack[i];
 					fps_sum[iter]+=fps_array[i];
 					latency_sum[iter]+=latency[i];
-					fprintf(fp,"%f,%f,%f,%f,%f,%f,%f\n",image_waiting_array[i],fetch_array[i],detect_array[i],	display_array[i],slack[i],fps_array[i],latency[i]);
+//					fprintf(fp,"%f,%f,%f,%f,%f,%f,%f\n",image_waiting_array[i],fetch_array[i],detect_array[i],	display_array[i],slack[i],fps_array[i],latency[i]);
 				}
-				fclose(fp);
+//				fclose(fp);
 				if(iter==0)
-				sleep_time=(int)detect_sum[0]/iteration-1000./(2*(int)(camera_fps));
+					sleep_time=(int)detect_sum[0]/iteration-1000./(2*(int)(camera_fps));
 				else 
 					sleep_time=(int)detect_sum[1]/iteration-1000./(2*(int)(camera_fps));
 				break;

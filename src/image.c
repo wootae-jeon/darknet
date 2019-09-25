@@ -5,10 +5,40 @@
 #include <stdio.h>
 #include <math.h>
 
+
+#include <net/if.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <linux/can.h>
+#include <linux/can/raw.h>
+
+
+
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
+
+
+#define __MAX(a,b) (((a)>(b))?(a):(b))
+#define __MIN(a,b) (((a)<(b))?(a):(b))
+
+#define array_size 10
+struct can_frame frames[2][array_size];
+struct object_info{
+	int left;
+	int right;
+	int top;
+	int bot;
+	int class;
+	int id;
+}object_info[2][array_size];
+
+char id_array[2][array_size]={0};
+int prior_object_number=0;
+int frame_index=0;
+
 
 int windows = 0;
 
@@ -239,11 +269,31 @@ image **load_alphabet()
 void draw_detections(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
 {
     int i,j;
+	
+	//CAN COMMUNICATION variables
+	int FVR=0;
+	int FVI=0;
+	int FVL=0;
+	int s;
+	struct sockaddr_can addr;
+	struct can_frame frame;
+	struct ifreq ifr;
+	const char *ifname="can0";
+	frame.can_dlc=8;
+	frame.can_id=0x000;
+	for(int k=0; k<frame.can_dlc;k++)
+		frame.data[k]=0x00;
+	for(int k=0;k<array_size;k++)
+		id_array[frame_index][k]=0;
 
-    for(i = 0; i < num; ++i){
+
+	//object tracking
+	int now_object_number=0;
+
+    for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
         int class = -1;
-        for(j = 0; j < classes; ++j){
+        for(j = 0; j < classes; ++j){ //classes = demo_classes(80 or 8)
             if (dets[i].prob[j] > thresh){
                 if (class < 0) {
                     strcat(labelstr, names[j]);
@@ -252,27 +302,16 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
                     strcat(labelstr, ", ");
                     strcat(labelstr, names[j]);
                 }
-                printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);
-            }
+                printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);	
+			}
         }
         if(class >= 0){
             int width = im.h * .006;
-
-            /*
-               if(0){
-               width = pow(prob, 1./2.)*10+1;
-               alphabet = 0;
-               }
-             */
-
-            //printf("%d %s: %.0f%%\n", i, names[class], prob*100);
             int offset = class*123457 % classes;
             float red = get_color(2,offset,classes);
             float green = get_color(1,offset,classes);
             float blue = get_color(0,offset,classes);
             float rgb[3];
-
-            //width = prob*20+2;
 
             rgb[0] = red;
             rgb[1] = green;
@@ -290,6 +329,83 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
             if(top < 0) top = 0;
             if(bot > im.h-1) bot = im.h-1;
 
+			//object tracking start//
+			float iou=0;
+			float max_iou=0.5;
+			int need_new_id=1;	
+			
+			for(int k=0;k<prior_object_number;k++){
+				if(object_info[(frame_index+1)%2][k].class==class){
+					int x1=__MAX(left,object_info[(frame_index+1)%2][k].left);	
+					int y1=__MAX(top,object_info[(frame_index+1)%2][k].top);	
+					int x2=__MIN(right,object_info[(frame_index+1)%2][k].right);	
+					int y2=__MIN(bot,object_info[(frame_index+1)%2][k].bot);	
+					int area_intersection=(x2-x1)*(y2-y1);
+					int area_box1=(object_info[(frame_index+1)%2][k].right-object_info[(frame_index+1)%2][k].left)*(object_info[(frame_index+1)%2][k].bot-object_info[(frame_index+1)%2][k].top);
+					int area_box2=(right-left)*(bot-top);
+					iou=(float)area_intersection/(area_box1+area_box2-area_intersection);
+//					printf("now class %d is same with object_info[%d][%d].class %d\n",class,(frame_index+1)%2,k,object_info[(frame_index+1)%2][k].class);
+//					printf("left %d, prior left %d, x1 %d\n",left,object_info[(frame_index+1)%2][k].left,x1);
+//					printf("top %d, prior top %d, y1 %d\n",top,object_info[(frame_index+1)%2][k].top,y1);
+//					printf("right %d, prior right %d, x2 %d\n",right,object_info[(frame_index+1)%2][k].right,x2);
+//					printf("bot %d, prior bot %d, y2 %d\n",bot,object_info[(frame_index+1)%2][k].bot,y2);
+//					printf("x1 %d, y1 %d, x2 %d, y2 %d, iou : %f \n",x1,y1,x2,y2,iou);
+					if(iou>max_iou){
+						max_iou=iou;
+						frame.can_id=object_info[(frame_index+1)%2][k].id;
+						need_new_id=0;
+						id_array[frame_index][frame.can_id]=1;
+					}
+				}
+			}
+			if(need_new_id){
+				for(int k=0;k<array_size;k++){
+					if(!id_array[(frame_index+1)%2][k])	{
+						frame.can_id=k;
+						id_array[frame_index][frame.can_id]=1;
+						id_array[(frame_index+1)%2][frame.can_id]=1;
+						break;
+					}
+				}
+			}
+			char _can_id[256];
+			sprintf(_can_id,"%d",frame.can_id);
+            strcat(labelstr, _can_id);
+			//object tracking end//
+
+			// SOCKET CAN COMMUNICATION start //
+			if((s=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+				perror("Error while opening socket");
+			}
+			strcpy(ifr.ifr_name,ifname);
+			ioctl(s, SIOCGIFINDEX,&ifr);
+			addr.can_family=AF_CAN;
+			addr.can_ifindex=ifr.ifr_ifindex;
+
+			if(bind(s,(struct sockaddr *)&addr,sizeof(addr))<0) {
+				perror("Error in socket bind");
+			}
+
+			frame.data[0]=(int)left/256+FVR*16;
+			frame.data[1]=left%256;
+			frame.data[2]=(int)top/256+FVI*16;
+			frame.data[3]=top%256;
+			frame.data[4]=(int)(right-left)/256+FVL*16;
+			frame.data[5]=(right-left)%256;
+			frame.data[6]=(int)(bot-top)/256+(class)*16;
+			frame.data[7]=(bot-top)%256;
+			write(s,&frame,sizeof(struct can_frame));
+			close(s);
+			object_info[frame_index][now_object_number].left=left;			
+			object_info[frame_index][now_object_number].right=right;		
+			object_info[frame_index][now_object_number].top=top;
+			object_info[frame_index][now_object_number].bot=bot;	
+			object_info[frame_index][now_object_number].class=class;		
+			object_info[frame_index][now_object_number].id=frame.can_id;		
+			now_object_number++;
+			// SOCKET CAN COMMUNICATION end //
+
+
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
             if (alphabet) {
                 image label = get_label(alphabet, labelstr, (im.h*.03));
@@ -305,8 +421,12 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
                 free_image(resized_mask);
                 free_image(tmask);
             }
-        }
-    }
+
+			
+        }//(class >=0)
+    }//(i < num(nboxes)) 
+	prior_object_number=now_object_number;
+	frame_index=(frame_index+1)%2;
 }
 
 void transpose_image(image im)
