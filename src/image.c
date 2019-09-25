@@ -386,14 +386,14 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 				perror("Error in socket bind");
 			}
 
-			frame.data[0]=(int)left/256+FVR*16;
-			frame.data[1]=left%256;
-			frame.data[2]=(int)top/256+FVI*16;
-			frame.data[3]=top%256;
-			frame.data[4]=(int)(right-left)/256+FVL*16;
-			frame.data[5]=(right-left)%256;
-			frame.data[6]=(int)(bot-top)/256+(class)*16;
-			frame.data[7]=(bot-top)%256;
+			frame.data[0]=(left<<7)|FVR;
+			frame.data[1]=left>>1;
+			frame.data[2]=(top<<7)|FVI;
+			frame.data[3]=top>>1;
+			frame.data[4]=((right-left)<<7)|FVL;
+			frame.data[5]=(right-left)>>1;
+			frame.data[6]=((bot-top)<<7)|(class);
+			frame.data[7]=(bot-top)>>1;
 			write(s,&frame,sizeof(struct can_frame));
 			close(s);
 			object_info[frame_index][now_object_number].left=left;			
