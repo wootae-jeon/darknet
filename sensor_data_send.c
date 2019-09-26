@@ -19,7 +19,7 @@ double gettimeafterboot(){
 }
 
 int main(void){
-	int i=0;
+	int i=0,j=0;
 	int s;
 	int nbytes;
 	struct sockaddr_can addr;
@@ -60,7 +60,7 @@ int main(void){
 			}
 			fgets(str_tmp,1024,Chassis_time_File);
 			next_timestamp=atoi(str_tmp);
-			printf("time : %d\n",curr_timestamp);
+
 			if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
 				perror("Error while opening socket");
 			}
@@ -97,6 +97,7 @@ int main(void){
 			p=strtok(NULL,",");
 			while(1){
 				if(gettimeafterboot()>standard_time){
+					printf("time : %f\n",gettimeafterboot());
 					write(s, &frame, sizeof(struct can_frame));
 					close(s);
 					break;
@@ -191,6 +192,31 @@ int main(void){
 				close(s);
 				
 			}	
+			if(j<8) j++;
+			else if (j==8){
+				if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
+					perror("Error while opening socket");
+				}
+			
+				strcpy(ifr.ifr_name, ifname);
+				ioctl(s, SIOCGIFINDEX, &ifr);
+				
+				addr.can_family  = AF_CAN;
+				addr.can_ifindex = ifr.ifr_ifindex;
+			
+				if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+					perror("Error in socket bind");
+				}
+			
+				frame.can_id  = 0x7ff;
+				frame.can_dlc = 8;
+				for(int k=0;k<frame.can_dlc;k++)
+					frame.data[k]=0;
+				write(s, &frame, sizeof(struct can_frame));
+				close(s);
+				j++;
+			}
+			else{}
 		}
 	}
 	return 0;
