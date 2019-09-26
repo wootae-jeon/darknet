@@ -285,7 +285,8 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	int FVR=0;
 	int FVI=0;
 	int FVL=0;
-	int s;
+	int sw;
+	int sr;
 	struct sockaddr_can addr;
 
 	struct can_frame frame;
@@ -301,9 +302,24 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 
 	//object tracking
 	int now_object_number=0;
+	if(For_Sync){
+	if((sr=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+		perror("Error while opening socket");
+	}
+	struct can_filter rfilter[4];
+	rfilter[0].can_id=0x7ff;	
+	rfilter[0].can_mask=CAN_SFF_MASK;
+	setsockopt(sr,SOL_CAN_RAW,CAN_RAW_FILTER,&rfilter,sizeof(rfilter));
+	strcpy(ifr.ifr_name,ifname);
+	ioctl(sr, SIOCGIFINDEX,&ifr);
+	addr.can_family=AF_CAN;
+	addr.can_ifindex=ifr.ifr_ifindex;
 
-
-
+	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
+		perror("Error in socket bind");
+	}
+	}
+	
 	//trigger by sensor data
 	while(For_Sync){
 		if(Image_time_File!=NULL){
@@ -325,45 +341,29 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			}
 			cnt=0;
 		}
-		struct can_filter rfilter[4];
 
-		if((s=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-			perror("Error while opening socket");
-		}
-		rfilter[0].can_id=0x7ff;	
-		rfilter[0].can_mask=CAN_SFF_MASK;
-		setsockopt(s,SOL_CAN_RAW,CAN_RAW_FILTER,&rfilter,sizeof(rfilter));
-		strcpy(ifr.ifr_name,ifname);
-		ioctl(s, SIOCGIFINDEX,&ifr);
-		addr.can_family=AF_CAN;
-		addr.can_ifindex=ifr.ifr_ifindex;
-
-		if(bind(s,(struct sockaddr *)&addr,sizeof(addr))<0) {
-			perror("Error in socket bind");
-		}
+	
 
 		int rd_size;
-		rd_size=read(s,&frame,sizeof(struct can_frame));
+		rd_size=read(sr,&frame,sizeof(struct can_frame));
 
 		if(0>rd_size) fprintf(stderr,"read error");
 		else if (rd_size<sizeof(struct can_frame)) fprintf(stderr,"read: incomplete CAN frame\n");
 		else{
 			if(frame.can_id==0x7ff)
 			{
-				printf("=======================\n");	
 				For_Sync=0;
 				if(frame.can_id&CAN_RTR_FLAG){
 					printf("remote request\n");
 					fflush(stdout);
 				}
 				standard_time=what_time_is_it_now();
-				close(s);
+				close(sr);
 				break;
 			}
 		}
-		close(s);
 	}
-
+	
 	while(1){
 		if(what_time_is_it_now()>standard_time){
 			printf("time : %f\n",what_time_is_it_now()*1000);
@@ -374,6 +374,16 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 		}
 	}
 
+	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+		perror("Error while opening socket");
+	}
+	strcpy(ifr.ifr_name,ifname);
+	ioctl(sw, SIOCGIFINDEX,&ifr);
+	addr.can_family=AF_CAN;
+	addr.can_ifindex=ifr.ifr_ifindex;
+	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
+		perror("Error in socket bind");
+	}
     for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
         int class = -1;
@@ -459,21 +469,12 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 				}
 			}
 			char _can_id[256];
-			sprintf(_can_id,"%d",frame.can_id);
+			sprintf(_can_id,"%x",frame.can_id);
             strcat(labelstr, _can_id);
 			//object tracking end//
 
 
-			if((s=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-				perror("Error while opening socket");
-			}
-			strcpy(ifr.ifr_name,ifname);
-			ioctl(s, SIOCGIFINDEX,&ifr);
-			addr.can_family=AF_CAN;
-			addr.can_ifindex=ifr.ifr_ifindex;
-			if(bind(s,(struct sockaddr *)&addr,sizeof(addr))<0) {
-				perror("Error in socket bind");
-			}
+			
 
 			frame.data[0]=(left<<7)|FVR;
 			frame.data[1]=left>>1;
@@ -484,8 +485,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			frame.data[6]=((bot-top)<<7)|(class);
 			frame.data[7]=(bot-top)>>1;
 			
-			write(s,&frame,sizeof(struct can_frame));
-			close(s);
+			write(sw,&frame,sizeof(struct can_frame));
 
 			object_info[frame_index][now_object_number].left=left;			
 			object_info[frame_index][now_object_number].right=right;		
@@ -522,27 +522,19 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	prior_object_number=now_object_number;
 	for(int k=0;k<array_size;k++){
 		if(!id_array[frame_index][k]){
-			if((s=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-				perror("Error while opening socket");
-			}
-			strcpy(ifr.ifr_name,ifname);
-			ioctl(s, SIOCGIFINDEX,&ifr);
-			addr.can_family=AF_CAN;
-			addr.can_ifindex=ifr.ifr_ifindex;
-			if(bind(s,(struct sockaddr *)&addr,sizeof(addr))<0) {
-				perror("Error in socket bind");
-			}
+			
 			frame.can_id=k+68;
 			//frame.can_id=k;
 			frame.can_dlc=8;
 			for(int z=0; z<frame.can_dlc;z++)
 				frame.data[z]=0x00;
-			write(s,&frame,sizeof(struct can_frame));
-			close(s);
+			write(sw,&frame,sizeof(struct can_frame));
 			usleep(2);
 		}
 	}
+
 	frame_index=(frame_index+1)%2;
+	close(sw);
 }
 
 void transpose_image(image im)

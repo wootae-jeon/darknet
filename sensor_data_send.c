@@ -50,6 +50,21 @@ int main(void){
 	FILE *Vehicle_Speed_File=fopen("excel/Vehicle_Speed.csv","r");
 	int First=1;
 	double standard_time=gettimeafterboot();
+	if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
+		perror("Error while opening socket");
+	}
+
+	strcpy(ifr.ifr_name, ifname);
+	ioctl(s, SIOCGIFINDEX, &ifr);
+	
+	addr.can_family  = AF_CAN;
+	addr.can_ifindex = ifr.ifr_ifindex;
+
+	if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		perror("Error in socket bind");
+	}
+	
+
 	if(Chassis_time_File!=NULL){
 		while(!feof(Chassis_time_File)){
 			//About Vehicle Speed
@@ -61,20 +76,7 @@ int main(void){
 			fgets(str_tmp,1024,Chassis_time_File);
 			next_timestamp=atoi(str_tmp);
 
-			if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
-				perror("Error while opening socket");
-			}
-		
-			strcpy(ifr.ifr_name, ifname);
-			ioctl(s, SIOCGIFINDEX, &ifr);
-			
-			addr.can_family  = AF_CAN;
-			addr.can_ifindex = ifr.ifr_ifindex;
-		
-			if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-				perror("Error in socket bind");
-			}
-		
+	
 			frame.can_id  = 0x003;
 			frame.can_dlc = 8;
 			fgets(str_tmp,1024,Vehicle_Speed_File);
@@ -99,7 +101,6 @@ int main(void){
 				if(gettimeafterboot()>standard_time){
 					printf("time : %f\n",gettimeafterboot());
 					write(s, &frame, sizeof(struct can_frame));
-					close(s);
 					break;
 				}else {
 					usleep((standard_time-gettimeafterboot())*1000);
@@ -112,19 +113,7 @@ int main(void){
 			
 			i=(i+1)%5;
 			if(i%5==0){//50ms period of Radar
-				if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
-					perror("Error while opening socket");
-				}
-			
-				strcpy(ifr.ifr_name, ifname);
-				ioctl(s, SIOCGIFINDEX, &ifr);
 				
-				addr.can_family  = AF_CAN;
-				addr.can_ifindex = ifr.ifr_ifindex;
-			
-				if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-					perror("Error in socket bind");
-				}
 			
 				for(int j=0;j<64;j++){
 				frame_64[j].can_id  = j+4;
@@ -189,36 +178,24 @@ int main(void){
 					write(s, &frame_64[j], sizeof(struct can_frame));
 					usleep(2);
 				}
-				close(s);
 				
 			}	
 			if(j<8) j++;
 			else if (j==8){
-				if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
-					perror("Error while opening socket");
-				}
-			
-				strcpy(ifr.ifr_name, ifname);
-				ioctl(s, SIOCGIFINDEX, &ifr);
 				
-				addr.can_family  = AF_CAN;
-				addr.can_ifindex = ifr.ifr_ifindex;
-			
-				if(bind(s, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-					perror("Error in socket bind");
-				}
 			
 				frame.can_id  = 0x7ff;
 				frame.can_dlc = 8;
 				for(int k=0;k<frame.can_dlc;k++)
 					frame.data[k]=0;
 				write(s, &frame, sizeof(struct can_frame));
-				close(s);
 				j++;
 			}
 			else{}
 		}
 	}
+
+	close(s);
 	return 0;
 }
 
