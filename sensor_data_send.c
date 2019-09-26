@@ -29,8 +29,8 @@ int main(void){
 	const char *ifname = "can0";
 
 	char str_tmp[1024];
-	char curr_timestamp[1024];
-	char prev_timestamp[1024];
+	int curr_timestamp;
+	int next_timestamp;
 	char *p;
 	float b[4]={0};
 	int cnt;
@@ -53,8 +53,14 @@ int main(void){
 	if(Chassis_time_File!=NULL){
 		while(!feof(Chassis_time_File)){
 			//About Vehicle Speed
-			fgets(curr_timestamp,1024,Chassis_time_File);
-			if(First) {memcpy(prev_timestamp,curr_timestamp,sizeof(curr_timestamp));First=0;}
+			if(First){
+				fgets(str_tmp,1024,Chassis_time_File);
+				curr_timestamp=atoi(str_tmp);
+				First=0;
+			}
+			fgets(str_tmp,1024,Chassis_time_File);
+			next_timestamp=atoi(str_tmp);
+			printf("time : %d\n",curr_timestamp);
 			if((s = socket(PF_CAN, SOCK_RAW, CAN_RAW)) < 0) {
 				perror("Error while opening socket");
 			}
@@ -75,29 +81,33 @@ int main(void){
 			p=strtok(str_tmp,",");
 			cnt=0;
 			while(p!=NULL){
-				if(gettimeafterboot()>standard_time){
 					p=strtok(NULL,",");
 					p=strtok(NULL,",");
 					p=strtok(NULL,",");
 					frame.data[0]=atoi(p);
-					//cnt++;
 					p=strtok(NULL,",");
-				}else {
-usleep((standard_time-gettimeafterboot())*1000); continue;}
 			}
 			//About Steering Angle
 		
 			fgets(str_tmp,1024,Steering_Angle_File);
 			p=strtok(str_tmp,",");
-			printf("steer angel : %f\n",atof(p));
+		//	printf("steer angel : %f\n",atof(p));
 			frame.data[1]=((int)atof(p)*10+5400);
 			frame.data[2]=(((int)atof(p)*10+5400)>>8);
 			p=strtok(NULL,",");
-			write(s, &frame, sizeof(struct can_frame));
-			close(s);
-			printf("gettimeafterboot() : %f\n",gettimeafterboot());
-			standard_time+=(atoi(curr_timestamp)-atoi(prev_timestamp));
-			memcpy(prev_timestamp,curr_timestamp,sizeof(curr_timestamp));
+			while(1){
+				if(gettimeafterboot()>standard_time){
+					write(s, &frame, sizeof(struct can_frame));
+					close(s);
+					break;
+				}else {
+					usleep((standard_time-gettimeafterboot())*1000);
+					continue;
+				}
+			}
+			//printf("gettimeafterboot() : %f\n",gettimeafterboot());
+			standard_time+=(next_timestamp-curr_timestamp);
+			curr_timestamp=next_timestamp;
 			
 			i=(i+1)%5;
 			if(i%5==0){//50ms period of Radar
@@ -125,8 +135,8 @@ usleep((standard_time-gettimeafterboot())*1000); continue;}
 				p=strtok(str_tmp,",");
 				cnt=0;
 				while(p!=NULL){
-					frame_64[cnt].data[0]=(int)(atof(p)*10+512);
-					frame_64[cnt].data[1]=(int)(atof(p)*10+512)>>8;
+					frame_64[cnt].data[0]=(int)(atof(p)*10+512+0.5);
+					frame_64[cnt].data[1]=(int)(atof(p)*10+512+0.5)>>8;
 					cnt++;
 					p=strtok(NULL,",");
 				}
@@ -176,7 +186,7 @@ usleep((standard_time-gettimeafterboot())*1000); continue;}
 
 				for(int j=0;j<64;j++){
 					write(s, &frame_64[j], sizeof(struct can_frame));
-					usleep(1);
+					usleep(2);
 				}
 				close(s);
 				
