@@ -41,6 +41,7 @@ int frame_index=0;
 int For_Sync=1;
 int cnt=0;
 double standard_time=0;
+int sw;
 
 char *p;
 int curr_timestamp;
@@ -285,7 +286,6 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	int FVR=0;
 	int FVI=0;
 	int FVL=0;
-	int sw;
 	int sr;
 	struct sockaddr_can addr;
 
@@ -296,9 +296,15 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	//frame.can_id=0x000;
 	for(int k=0; k<frame.can_dlc;k++)
 		frame.data[k]=0x00;
-	for(int k=0;k<array_size;k++)
+	for(int k=0;k<array_size;k++){
 		id_array[frame_index][k]=0;
-
+		object_info[frame_index][k].left=0;
+		object_info[frame_index][k].right=0;
+		object_info[frame_index][k].top=0;
+		object_info[frame_index][k].bot=0;
+		object_info[frame_index][k].class=0;
+		object_info[frame_index][k].id=99;
+	}
 
 	//object tracking
 	int now_object_number=0;
@@ -316,6 +322,16 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	addr.can_ifindex=ifr.ifr_ifindex;
 
 	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
+		perror("Error in socket bind");
+	}
+	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+		perror("Error while opening socket");
+	}
+	strcpy(ifr.ifr_name,ifname);
+	ioctl(sw, SIOCGIFINDEX,&ifr);
+	addr.can_family=AF_CAN;
+	addr.can_ifindex=ifr.ifr_ifindex;
+	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
 		perror("Error in socket bind");
 	}
 	}
@@ -374,16 +390,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 		}
 	}
 
-	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-		perror("Error while opening socket");
-	}
-	strcpy(ifr.ifr_name,ifname);
-	ioctl(sw, SIOCGIFINDEX,&ifr);
-	addr.can_family=AF_CAN;
-	addr.can_ifindex=ifr.ifr_ifindex;
-	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
-		perror("Error in socket bind");
-	}
+
     for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
         int class = -1;
@@ -427,7 +434,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 
 			//object tracking start//
 			float iou=0;
-			float max_iou=0.5;
+			float max_iou=0.4;
 			int need_new_id=1;	
 			
 			for(int k=0;k<prior_object_number;k++){
@@ -532,7 +539,14 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			usleep(2);
 		}
 	}
-
+//	printf("object_info[%d].id\n",frame_index);
+//	for(int z=0;z<array_size;z++){
+//		printf("%d, ",object_info[frame_index][z].id);
+//	}
+//	printf("\nid_array[%d]\n",frame_index);
+//	for(int z=0;z<array_size;z++){
+//		printf("%d, ",id_array[frame_index][z]);
+//	}
 	frame_index=(frame_index+1)%2;
 	close(sw);
 }
