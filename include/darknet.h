@@ -29,6 +29,18 @@ typedef struct{
     char **names;
 } metadata;
 
+typedef struct {
+    int left_cnt;
+    int center_cnt;
+    int right_cnt;
+    int gt_left_cnt;
+    int gt_center_cnt;
+    int gt_right_cnt;
+    int all_left_cnt;
+    int all_center_cnt;
+    int all_right_cnt;
+}car_cnt;
+
 metadata get_metadata(char *file);
 
 typedef struct{
@@ -732,7 +744,7 @@ float box_iou(box a, box b);
 data load_all_cifar10();
 box_label *read_boxes(char *filename, int *n);
 box float_to_box(float *f, int stride);
-void draw_detections(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes);
+car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, float thresh, char **names, image **alphabet, int classes);
 
 matrix network_predict_data(network *net, data test);
 image **load_alphabet();

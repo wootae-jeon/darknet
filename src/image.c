@@ -4,6 +4,7 @@
 #include "cuda.h"
 #include <stdio.h>
 #include <math.h>
+#include <stdbool.h>
 
 #include <unistd.h>
 #include <net/if.h>
@@ -25,13 +26,6 @@
 #define __MIN(a,b) (((a)<(b))?(a):(b))
 
 #define array_size 10
-
-//double gettimeafterboot(){
-//	struct timespec time_after_boot;
-//	clock_gettime(CLOCK_MONOTONIC,&time_after_boot);
-//	return (time_after_boot.tv_sec*1000+time_after_boot.tv_nsec*0.000001);
-//}
-
 struct can_frame frames[2][array_size];
 struct object_info{
 	int left;
@@ -53,7 +47,7 @@ int sw;
 char *p;
 int curr_timestamp;
 int prev_timestamp;
-int timestamp[1101]={0};
+int timestamp[1103]={0};
 
 
 int windows = 0;
@@ -281,14 +275,75 @@ image **load_alphabet()
     }
     return alphabets;
 }
+bool compute_iou(float gt_a, float gt_b, float gt_c, float gt_d, int pred_xmin, int pred_ybot, int pred_xmax, int pred_ytop){
 
-void draw_detections(image im, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
+    bool ok_cnt = false;
+    int img_width = 1280;
+    int img_height = 960;
+    int gt_bbox_w = (int)(gt_c * img_width);
+    int gt_bbox_h = (int)(gt_d * img_height);
+    int gt_xmin = (int)((gt_a*img_width) - (gt_bbox_w/2));
+    int gt_ybot = (int)((gt_b * img_height) + gt_bbox_h/2);
+    int gt_xmax = (int)(gt_xmin + gt_bbox_w);
+    int gt_ytop = (int)(gt_ybot - gt_bbox_h);
+
+    int inter_area;
+    float iou = 0.0;
+    int x_a = __MAX(gt_xmin, pred_xmin);
+    int y_a = __MIN(gt_ybot, pred_ybot);
+    int x_b = __MIN(gt_xmax, pred_xmax);
+    int y_b = __MAX(gt_ytop, pred_ytop);
+
+    if (((x_b - x_a) > 0) && (y_a - y_b) > 0){
+        inter_area = abs((x_b - x_a)) * abs((y_a - y_b));
+        int gt_area = (gt_xmax - gt_xmin) * (gt_ybot -gt_ytop);
+        int pred_area = (pred_xmax - pred_xmin) * (pred_ybot - pred_ytop);
+        iou = (float) inter_area / (gt_area + pred_area - inter_area);
+    }
+    if (iou >= 0.5){
+        ok_cnt = true;
+    }
+    return ok_cnt;
+}
+
+car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, float thresh, char **names, image **alphabet, int classes)
 {
     int i,j;
-	
-	//Read File	
+    // Read GT files.
+    bool gt_flag = true;
+    FILE *fp;
+    if ((fp = fopen(gt_input, "r")) == NULL){
+          gt_flag = false;
+    }
+    char pred_box[3][5][20];
+    int label_cnt = 0;
+
+    if (gt_flag== true){
+        char text[256];
+        char fuc[3][50];
+        for(int i=0;i<3;i++){
+            if(fgets(text, sizeof(text), fp)==NULL) break;
+            else{
+                label_cnt += 1;
+                strcpy(fuc[i],text);
+            }
+        }
+        for(int i =0; i<label_cnt; i++){
+            char *input_ptr = strtok(fuc[i], " ");
+            int k = 0;
+            while (input_ptr != NULL)
+            {
+                strcpy(pred_box[i][k], input_ptr);
+                k = k + 1;
+                input_ptr = strtok(NULL, " ");
+            }
+        }
+
+        fclose(fp);
+    }
+
+	//Read File
 	char str_tmp[1024];
-	//FILE *Image_time_File=fopen("FrontLeft/FrontLeft.txt","r");
 	FILE *Image_time_File=fopen("FrontLeft.txt","r");
 	//CAN COMMUNICATION variables
 	int FVR=0;
@@ -296,7 +351,6 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	int FVL=0;
 	int sr;
 	struct sockaddr_can addr;
-	int nbytes=0;
 
 	struct can_frame frame;
 	struct ifreq ifr;
@@ -333,9 +387,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
 		perror("Error in socket bind");
 	}
-
 	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-		//printf("error while opening socket\n");
 		perror("Error while opening socket");
 	}
 	strcpy(ifr.ifr_name,ifname);
@@ -343,11 +395,11 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	addr.can_family=AF_CAN;
 	addr.can_ifindex=ifr.ifr_ifindex;
 	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
-		printf("error in socket bind\n");
 		perror("Error in socket bind");
 	}
 	}
-	
+
+
 	//trigger by sensor data
 	while(For_Sync){
 		if(Image_time_File!=NULL){
@@ -358,11 +410,11 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 				p=strtok(NULL," ");
 				p=strtok(NULL," ");
 				p=strtok(NULL," ");
-				
+
 				timestamp[cnt]=atoi(p);
 				printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
 				cnt++;
-					
+
 				while(p!=NULL){
 					p=strtok(NULL," ");
 				}
@@ -371,7 +423,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			cnt=0;
 		}
 
-	
+
 
 		int rd_size;
 		rd_size=read(sr,&frame,sizeof(struct can_frame));
@@ -387,7 +439,6 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 					fflush(stdout);
 				}
 				standard_time=what_time_is_it_now();
-				//standard_time=gettimeafterboot();
 				close(sr);
 				break;
 			}
@@ -396,25 +447,26 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	
 	while(1){
 		if(what_time_is_it_now()>standard_time){
-			printf("curr time : %f\n",what_time_is_it_now()*1000);
-//			printf("standard time : %f\n",standard_time*1000);
+			printf("curr time :  %f\n",what_time_is_it_now()*1000);
+			printf("stand time : %f\n",standard_time*1000);
 			break;
 		}else{
-			usleep((standard_time-what_time_is_it_now())*1000000);
 			printf("usleep\n");
+			usleep((standard_time-what_time_is_it_now())*1000000);
 			continue;
 		}
-
-//		if(gettimeafterboot()>standard_time){
-//			printf("time : %f\n",gettimeafterboot());
-//			break;
-//		}else{
-//			usleep((standard_time-gettimeafterboot())*1000);
-//			continue;
-//		}
 	}
-
 	frame.can_dlc=8;
+    car_cnt cnts;
+    cnts.gt_left_cnt = 0;
+    cnts.gt_center_cnt = 0;
+    cnts.gt_right_cnt = 0;
+    cnts.left_cnt = 0;
+    cnts.center_cnt = 0;
+    cnts.right_cnt = 0;
+    cnts.all_left_cnt = 0;
+    cnts.all_center_cnt = 0;
+    cnts.all_right_cnt = 0;
 
     for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
@@ -424,10 +476,11 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
                 if (class < 0) {
                     strcat(labelstr, names[j]);
                     class = j;
-                } else {
-                    strcat(labelstr, ", ");
-                    strcat(labelstr, names[j]);
                 }
+//                else {
+//                    strcat(labelstr, ", ");
+//                    strcat(labelstr, names[j]);
+//                }
                 printf("%s: %.0f%%\n", names[j], dets[i].prob[j]*100);	
 			}
         }
@@ -445,7 +498,6 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
             rgb[1] = green;
             rgb[2] = blue;
             box b = dets[i].bbox;
-            //printf("%f %f %f %f\n", b.x, b.y, b.w, b.h);
 
             int left  = (b.x-b.w/2.)*im.w;
             int right = (b.x+b.w/2.)*im.w;
@@ -457,6 +509,50 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
             if(top < 0) top = 0;
             if(bot > im.h-1) bot = im.h-1;
 
+            if (gt_flag == true){
+                // Count GT
+                for(int k=0;k<label_cnt;k++){
+                    if (atoi(pred_box[k][0]) == 0){
+                        cnts.gt_left_cnt = 1;
+                    } else if (atoi(pred_box[k][0]) == 1){
+                        cnts.gt_center_cnt = 1;
+                    } else if (atoi(pred_box[k][0]) == 2){
+                        cnts.gt_right_cnt = 1;
+                    }
+                }
+
+                bool left_check = false;
+                bool center_check = false;
+                bool right_check = false;
+                for(int k=0;k<label_cnt;k++){
+                    if (strcmp(labelstr, "FVL")==0 && atoi(pred_box[k][0]) == 0){
+                        if (left_check == false){
+                            cnts.all_left_cnt = 1;
+                            left_check = compute_iou(atof(pred_box[k][1]), atof(pred_box[k][2]), atof(pred_box[k][3]), atof(pred_box[k][4]), left, bot, right, top);
+                            if (left_check == true){
+                                cnts.left_cnt = 1;
+                            }
+                        }
+                    } else if (strcmp(labelstr, "FVI")==0 && atoi(pred_box[k][0]) == 1){
+                        if (center_check == false){
+                            cnts.all_center_cnt = 1;
+                            center_check = compute_iou(atof(pred_box[k][1]), atof(pred_box[k][2]), atof(pred_box[k][3]), atof(pred_box[k][4]), left, bot, right, top);
+                            if (center_check == true){
+                                cnts.center_cnt = 1;
+                            }
+                        }
+                    } else if (strcmp(labelstr, "FVR")==0 && atoi(pred_box[k][0]) == 2){
+                        if (right_check == false){
+                            cnts.all_right_cnt = 1;
+                            right_check = compute_iou(atof(pred_box[k][1]), atof(pred_box[k][2]), atof(pred_box[k][3]), atof(pred_box[k][4]), left, bot, right, top);
+                            if (right_check == true){
+                                cnts.right_cnt = 1;
+                            }
+                        }
+                    }
+                }
+            }
+//            exit(0);
 			//object tracking start//
 			float iou=0;
 			float max_iou=0.4;
@@ -505,12 +601,11 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
             strcat(labelstr, _can_id);
 			//object tracking end//
 
-
-			
-	    		int trans_left=left/2;
+			int trans_left=left/2;
 			int trans_right=right/2;
 			int trans_top=top/2;
 			int trans_bot=bot/2;
+			
 
 			frame.data[0]=(trans_left<<6)|FVR;
 			frame.data[1]=trans_left>>2;
@@ -521,9 +616,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			frame.data[6]=((trans_bot-trans_top)<<7)|(class);
 			frame.data[7]=(trans_bot-trans_top)>>1;
 			
-			nbytes=write(sw,&frame,sizeof(struct can_frame));
-			//printf("Wrote %d bytes\n",nbytes);
-			//printf("socket number : %d\n",sw);
+			write(sw,&frame,sizeof(struct can_frame));
 
 			object_info[frame_index][now_object_number].left=left;			
 			object_info[frame_index][now_object_number].right=right;		
@@ -534,11 +627,6 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			now_object_number++;
 
 			// SOCKET CAN COMMUNICATION end //
-//	    		left=left*2;
-//			right=right*2;
-//			top=top*2;
-//			bot=bot*2;
-
 
 
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
@@ -560,9 +648,10 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			
         }//(class >=0)
     }//(i < num(nboxes)) 
-	standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	//standard_time+=((timestamp[cnt+1]-timestamp[cnt]));
-	//standard_time+=((timestamp[cnt+1]-timestamp[cnt]));
+	//standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	printf("cnt : %d, timestamp[%d]: %d, timestamp[%d]: %d, gap : %f\n",cnt,cnt,timestamp[cnt],cnt+1,timestamp[cnt+1],gap);
+	standard_time+=gap;
 	cnt++;
 	prior_object_number=now_object_number;
 	for(int k=0;k<array_size;k++){
@@ -574,7 +663,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			for(int z=0; z<frame.can_dlc;z++)
 				frame.data[z]=0x00;
 			write(sw,&frame,sizeof(struct can_frame));
-			usleep(5);
+			usleep(2);
 		}
 	}
 //	printf("object_info[%d].id\n",frame_index);
@@ -587,6 +676,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 //	}
 	frame_index=(frame_index+1)%2;
 	//close(sw);
+	return cnts;
 }
 
 void transpose_image(image im)

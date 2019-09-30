@@ -4,6 +4,15 @@
 
 static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
 
+int left_cnts = 0;
+int center_cnts = 0;
+int right_cnts = 0;
+int gt_left_cnt = 0;
+int gt_center_cnt = 0;
+int gt_right_cnt = 0;
+int all_left_cnt = 0;
+int all_center_cnt = 0;
+int all_right_cnt = 0;
 
 void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, int ngpus, int clear)
 {
@@ -561,7 +570,7 @@ void validate_detector_recall(char *cfgfile, char *weightfile)
 }
 
 
-void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen)
+void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filename, float thresh, float hier_thresh, char *outfile, int fullscreen, char *gt_path)
 {
     list *options = read_data_cfg(datacfg);
     char *name_list = option_find_str(options, "names", "data/names.list");
@@ -575,7 +584,13 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
     char buff[256];
     char *input = buff;
     float nms=.45;
-    
+
+    char gt_buff[256];
+    char *gt_input = gt_buff;
+
+    char out_buff[256];
+    char *out_p = out_buff;
+
 	opendir(filename);
 	
 	struct dirent **namelist;
@@ -584,6 +599,7 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 	count=scandir(filename,&namelist,NULL,alphasort);
 
     make_window("predictions", 512, 512, 0);
+
 	for(idx=0;idx<count;idx++){
 		if(namelist[idx]->d_type==DT_REG){	
 			strncpy(input, filename, 256);
@@ -591,13 +607,17 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 			strcat(input,namelist[idx]->d_name);
 	        image im = load_image_color(input,0,0);
 	        image sized = letterbox_image(im, net->w, net->h);
-	        //image sized = resize_image(im, net->w, net->h);
-	        //image sized2 = resize_max(im, net->w);
-	        //image sized = crop_image(sized2, -((net->w - sized2.w)/2), -((net->h - sized2.h)/2), net->w, net->h);
-	        //resize_network(net, sized.w, sized.h);
 	        layer l = net->layers[net->n-1];
-	
-	
+
+            strncpy(gt_input, gt_path, 256);
+            strcat(gt_input,"/");
+            strcat(gt_input,namelist[idx]->d_name);
+            strcat(gt_input,"/");
+            char *pos;
+            pos = strrchr(gt_input, '.' );
+            *pos = NULL;
+ 			strcat(gt_input,".txt");
+
 	        float *X = sized.data;
 	        time=what_time_is_it_now();
 	        network_predict(net, X);
@@ -608,13 +628,37 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 	        //printf("%d\n", nboxes);
 	        //if (nms) do_nms_obj(boxes, probs, l.w*l.h*l.n, l.classes, nms);
 	        if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
-	        draw_detections(im, dets, nboxes, thresh, names, alphabet, l.classes);
+            car_cnt cnts;
+	        cnts = draw_detections(im, gt_input, dets, nboxes, thresh, names, alphabet, l.classes);
+
+            left_cnts += cnts.left_cnt;
+            center_cnts += cnts.center_cnt;
+            right_cnts += cnts.right_cnt;
+            gt_left_cnt += cnts.gt_left_cnt;
+            gt_center_cnt += cnts.gt_center_cnt;
+            gt_right_cnt += cnts.gt_right_cnt;
+            all_left_cnt += cnts.all_left_cnt;
+            all_center_cnt += cnts.all_center_cnt;
+            all_right_cnt += cnts.all_right_cnt;
+
+            printf("*--Accuracy [#Pred/#GT]-----*\n");
+            printf("Left   Car : [%d/%d] \n", left_cnts, gt_left_cnt);
+            printf("Center Car : [%d/%d] \n", center_cnts, gt_center_cnt);
+            printf("Right  Car : [%d/%d] \n", right_cnts, gt_right_cnt);
+
+            printf("*--Accuracy [#Pred/#ALL Pred]-----*\n");
+            printf("Left   Car : [%d/%d] \n", left_cnts, all_left_cnt);
+            printf("Center Car : [%d/%d] \n", center_cnts, all_center_cnt);
+            printf("Right  Car : [%d/%d] \n", right_cnts, all_right_cnt);
+
 	        free_detections(dets, nboxes);
 	        if(outfile){
-	            save_image(im, outfile);
+		    strncpy(out_p, outfile, 256);
+		    strcat(out_p, "/");
+		    strcat(out_p, namelist[idx]->d_name);
+	            save_image(im, out_p);
 	        }
 	        else{
-	            //save_image(im, "predictions");
 	#ifdef OPENCV
 	            show_image(im, "predictions", 1);
 	#endif
@@ -799,7 +843,7 @@ void network_detect(network *net, image im, float thresh, float hier_thresh, flo
 void run_detector(int argc, char **argv)
 {
     char *prefix = find_char_arg(argc, argv, "-prefix", 0);
-    float thresh = find_float_arg(argc, argv, "-thresh", .5);
+    float thresh = find_float_arg(argc, argv, "-thresh", .25);
     float hier_thresh = find_float_arg(argc, argv, "-hier", .5);
     int cam_index = find_int_arg(argc, argv, "-c", 0);
     int frame_skip = find_int_arg(argc, argv, "-s", 0);
@@ -843,7 +887,8 @@ void run_detector(int argc, char **argv)
     char *cfg = argv[4];
     char *weights = (argc > 5) ? argv[5] : 0;
     char *filename = (argc > 6) ? argv[6]: 0;
-    if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, outfile, fullscreen);
+    char *gt_path = (argc > 7) ? argv[7]: 0;
+    if(0==strcmp(argv[2], "test")) test_detector(datacfg, cfg, weights, filename, thresh, hier_thresh, outfile, fullscreen, gt_path);
     else if(0==strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear);
     else if(0==strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if(0==strcmp(argv[2], "valid2")) validate_detector_flip(datacfg, cfg, weights, outfile);
