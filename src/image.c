@@ -411,9 +411,9 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 				p=strtok(NULL," ");
 				p=strtok(NULL," ");
 
-				timestamp[cnt]=atoi(p);
-				printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
-				cnt++;
+				timestamp[cnt++]=atoi(p);
+				//printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
+				//cnt++;
 
 				while(p!=NULL){
 					p=strtok(NULL," ");
@@ -448,7 +448,7 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 	while(1){
 		if(what_time_is_it_now()>standard_time){
 			printf("curr time :  %f\n",what_time_is_it_now()*1000);
-			printf("stand time : %f\n",standard_time*1000);
+			//printf("stand time : %f\n",standard_time*1000);
 			break;
 		}else{
 			printf("usleep\n");
@@ -650,7 +650,7 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
     }//(i < num(nboxes)) 
 	//standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
 	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	printf("cnt : %d, timestamp[%d]: %d, timestamp[%d]: %d, gap : %f\n",cnt,cnt,timestamp[cnt],cnt+1,timestamp[cnt+1],gap);
+	//printf("cnt : %d, timestamp[%d]: %d, timestamp[%d]: %d, gap : %f\n",cnt,cnt,timestamp[cnt],cnt+1,timestamp[cnt+1],gap);
 	standard_time+=gap;
 	cnt++;
 	prior_object_number=now_object_number;
