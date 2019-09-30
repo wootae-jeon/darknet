@@ -93,9 +93,9 @@ int main(void){
 		
 			fgets(str_tmp,1024,Steering_Angle_File);
 			p=strtok(str_tmp,",");
-		//	printf("steer angel : %f\n",atof(p));
-			frame.data[1]=((int)(atof(p)*10+5400+0.5));
-			frame.data[2]=(((int)(atof(p)*10+5400+0.5))>>8);
+		//	printf("steer angle : %f\n",atof(p));
+			frame.data[1]=((int)(atof(p)*10+0.5));
+			frame.data[2]=(((int)(atof(p)*10+0.5))>>8);
 			p=strtok(NULL,",");
 			while(1){
 				if(gettimeafterboot()>standard_time){
@@ -125,8 +125,8 @@ int main(void){
 				p=strtok(str_tmp,",");
 				cnt=0;
 				while(p!=NULL){
-					frame_64[cnt].data[0]=(int)(atof(p)*10+512+0.5);
-					frame_64[cnt].data[1]=(int)(atof(p)*10+512+0.5)>>8;
+					frame_64[cnt].data[0]=(int)(atof(p)*10+0.5);
+					frame_64[cnt].data[1]=(int)(atof(p)*10+0.5)>>8;
 					cnt++;
 					p=strtok(NULL,",");
 				}
@@ -156,8 +156,8 @@ int main(void){
 				p=strtok(str_tmp,",");
 				cnt=0;
 				while(p!=NULL){
-					frame_64[cnt].data[3]=frame_64[cnt].data[3]|(((int)(atof(p)*20+512+0.5))<<1);
-					frame_64[cnt].data[4]=((int)(atof(p)*20+512+0.5))>>7;
+					frame_64[cnt].data[3]=frame_64[cnt].data[3]|(((int)(atof(p)*20+0.5))<<1);
+					frame_64[cnt].data[4]=((int)(atof(p)*20+0.5))>>7;
 					cnt++;
 					p=strtok(NULL,",");
 				}
@@ -166,9 +166,9 @@ int main(void){
 				p=strtok(str_tmp,",");
 				cnt=0;
 				while(p!=NULL){
-					frame_64[cnt].data[4]=frame_64[cnt].data[4]|(((int)(atof(p)*10+8192+0.5))<<3);
-					frame_64[cnt].data[5]=((int)(atof(p)*10+8192+0.5))>>5;
-					frame_64[cnt].data[6]=((int)(atof(p)*10+8192+0.5))>>13;
+					frame_64[cnt].data[4]=frame_64[cnt].data[4]|(((int)(atof(p)*10+0.5))<<3);
+					frame_64[cnt].data[5]=((int)(atof(p)*10+0.5))>>5;
+					frame_64[cnt].data[6]=((int)(atof(p)*10+0.5))>>13;
 					cnt++;
 					p=strtok(NULL,",");
 				}
@@ -176,7 +176,7 @@ int main(void){
 
 				for(int j=0;j<64;j++){
 					write(s, &frame_64[j], sizeof(struct can_frame));
-					usleep(2);
+					usleep(1);
 				}
 				
 			}	

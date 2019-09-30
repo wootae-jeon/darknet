@@ -25,6 +25,13 @@
 #define __MIN(a,b) (((a)<(b))?(a):(b))
 
 #define array_size 10
+
+//double gettimeafterboot(){
+//	struct timespec time_after_boot;
+//	clock_gettime(CLOCK_MONOTONIC,&time_after_boot);
+//	return (time_after_boot.tv_sec*1000+time_after_boot.tv_nsec*0.000001);
+//}
+
 struct can_frame frames[2][array_size];
 struct object_info{
 	int left;
@@ -281,13 +288,15 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	
 	//Read File	
 	char str_tmp[1024];
-	FILE *Image_time_File=fopen("FrontLeft/FrontLeft.txt","r");
+	//FILE *Image_time_File=fopen("FrontLeft/FrontLeft.txt","r");
+	FILE *Image_time_File=fopen("FrontLeft.txt","r");
 	//CAN COMMUNICATION variables
 	int FVR=0;
 	int FVI=0;
 	int FVL=0;
 	int sr;
 	struct sockaddr_can addr;
+	int nbytes=0;
 
 	struct can_frame frame;
 	struct ifreq ifr;
@@ -324,7 +333,9 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
 		perror("Error in socket bind");
 	}
+
 	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+		//printf("error while opening socket\n");
 		perror("Error while opening socket");
 	}
 	strcpy(ifr.ifr_name,ifname);
@@ -332,6 +343,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	addr.can_family=AF_CAN;
 	addr.can_ifindex=ifr.ifr_ifindex;
 	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
+		printf("error in socket bind\n");
 		perror("Error in socket bind");
 	}
 	}
@@ -346,9 +358,10 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 				p=strtok(NULL," ");
 				p=strtok(NULL," ");
 				p=strtok(NULL," ");
-				p=strtok(NULL," ");
 				
-				timestamp[cnt++]=atoi(p);
+				timestamp[cnt]=atoi(p);
+				printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
+				cnt++;
 					
 				while(p!=NULL){
 					p=strtok(NULL," ");
@@ -374,6 +387,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 					fflush(stdout);
 				}
 				standard_time=what_time_is_it_now();
+				//standard_time=gettimeafterboot();
 				close(sr);
 				break;
 			}
@@ -382,14 +396,25 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 	
 	while(1){
 		if(what_time_is_it_now()>standard_time){
-			printf("time : %f\n",what_time_is_it_now()*1000);
+			printf("curr time : %f\n",what_time_is_it_now()*1000);
+//			printf("standard time : %f\n",standard_time*1000);
 			break;
 		}else{
 			usleep((standard_time-what_time_is_it_now())*1000000);
+			printf("usleep\n");
 			continue;
 		}
+
+//		if(gettimeafterboot()>standard_time){
+//			printf("time : %f\n",gettimeafterboot());
+//			break;
+//		}else{
+//			usleep((standard_time-gettimeafterboot())*1000);
+//			continue;
+//		}
 	}
 
+	frame.can_dlc=8;
 
     for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
@@ -476,23 +501,29 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 				}
 			}
 			char _can_id[256];
-			sprintf(_can_id,"%x",frame.can_id);
+			sprintf(_can_id,"_%d",frame.can_id-68);
             strcat(labelstr, _can_id);
 			//object tracking end//
 
 
 			
+	    		int trans_left=left/2;
+			int trans_right=right/2;
+			int trans_top=top/2;
+			int trans_bot=bot/2;
 
-			frame.data[0]=(left<<7)|FVR;
-			frame.data[1]=left>>1;
-			frame.data[2]=(top<<7)|FVI;
-			frame.data[3]=top>>1;
-			frame.data[4]=((right-left)<<7)|FVL;
-			frame.data[5]=(right-left)>>1;
-			frame.data[6]=((bot-top)<<7)|(class);
-			frame.data[7]=(bot-top)>>1;
+			frame.data[0]=(trans_left<<6)|FVR;
+			frame.data[1]=trans_left>>2;
+			frame.data[2]=(trans_top<<7)|FVI;
+			frame.data[3]=trans_top>>1;
+			frame.data[4]=((trans_right-trans_left)<<6)|FVL;
+			frame.data[5]=(trans_right-trans_left)>>2;
+			frame.data[6]=((trans_bot-trans_top)<<7)|(class);
+			frame.data[7]=(trans_bot-trans_top)>>1;
 			
-			write(sw,&frame,sizeof(struct can_frame));
+			nbytes=write(sw,&frame,sizeof(struct can_frame));
+			//printf("Wrote %d bytes\n",nbytes);
+			//printf("socket number : %d\n",sw);
 
 			object_info[frame_index][now_object_number].left=left;			
 			object_info[frame_index][now_object_number].right=right;		
@@ -503,6 +534,11 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			now_object_number++;
 
 			// SOCKET CAN COMMUNICATION end //
+//	    		left=left*2;
+//			right=right*2;
+//			top=top*2;
+//			bot=bot*2;
+
 
 
             draw_box_width(im, left, top, right, bot, width, red, green, blue);
@@ -525,6 +561,8 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
         }//(class >=0)
     }//(i < num(nboxes)) 
 	standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	//standard_time+=((timestamp[cnt+1]-timestamp[cnt]));
+	//standard_time+=((timestamp[cnt+1]-timestamp[cnt]));
 	cnt++;
 	prior_object_number=now_object_number;
 	for(int k=0;k<array_size;k++){
@@ -536,7 +574,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 			for(int z=0; z<frame.can_dlc;z++)
 				frame.data[z]=0x00;
 			write(sw,&frame,sizeof(struct can_frame));
-			usleep(2);
+			usleep(5);
 		}
 	}
 //	printf("object_info[%d].id\n",frame_index);
@@ -548,7 +586,7 @@ void draw_detections(image im, detection *dets, int num, float thresh, char **na
 //		printf("%d, ",id_array[frame_index][z]);
 //	}
 	frame_index=(frame_index+1)%2;
-	close(sw);
+	//close(sw);
 }
 
 void transpose_image(image im)
