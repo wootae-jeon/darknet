@@ -25,7 +25,7 @@
 #define __MAX(a,b) (((a)>(b))?(a):(b))
 #define __MIN(a,b) (((a)<(b))?(a):(b))
 
-#define array_size 10
+#define array_size 20
 struct can_frame frames[2][array_size];
 struct object_info{
 	int left;
