@@ -29,20 +29,30 @@ int main(void){
 	const char *ifname = "can0";
 
 	char str_tmp[1024];
+	char str_tmp1[1024];
+	char str_tmp2[1024];
+	char str_tmp3[1024];
+	char str_tmp4[1024];
+	char str_tmp5[1024];
 	int curr_timestamp;
 	int next_timestamp;
 	char *p;
+	char *p1;
+	char *p2;
+	char *p3;
+	char *p4;
+	char *p5;
 	float b[4]={0};
 	int cnt;
 
-	FILE *Radar_Amplitude_File=fopen("excel/Radar_Amplitude.csv","r");
+	//FILE *Radar_Amplitude_File=fopen("excel/Radar_Amplitude.csv","r");
 	FILE *Radar_Angle_File=fopen("excel/Radar_Angle.csv","r");
-	FILE *Radar_LateRate_File=fopen("excel/Radar_LateRate.csv","r");
+	//FILE *Radar_LateRate_File=fopen("excel/Radar_LateRate.csv","r");
 	FILE *Radar_Range_File=fopen("excel/Radar_Range.csv","r");
 	FILE *Radar_RangeAccel_File=fopen("excel/Radar_RangeAccel.csv","r");
 	FILE *Radar_RangeRate_File=fopen("excel/Radar_RangeRate.csv","r");
 	FILE *Radar_time_File=fopen("excel/Radar_time.csv","r");
-	FILE *Radar_ValidLevel_File=fopen("excel/Radar_ValidLevel.csv","r");
+	//FILE *Radar_ValidLevel_File=fopen("excel/Radar_ValidLevel.csv","r");
 	FILE *Radar_Width_File=fopen("excel/Radar_Width.csv","r");
 
 	FILE *Chassis_time_File=fopen("excel/Chassis_time.csv","r");
@@ -114,71 +124,37 @@ int main(void){
 			i=(i+1)%5;
 			if(i%5==0){//50ms period of Radar
 				
-			
-				for(int j=0;j<64;j++){
-				frame_64[j].can_id  = j+4;
-				frame_64[j].can_dlc = 8;
-				}
-
 				//Radar data 
-				fgets(str_tmp,1024,Radar_Angle_File);
-				p=strtok(str_tmp,",");
+				fgets(str_tmp1,1024,Radar_Angle_File);
+				fgets(str_tmp2,1024,Radar_Range_File);//0~200
+				fgets(str_tmp3,1024,Radar_Width_File);
+				fgets(str_tmp4,1024,Radar_RangeAccel_File);
+				fgets(str_tmp5,1024,Radar_RangeRate_File);
+				p1=strtok(str_tmp1,",");
+				p2=strtok(str_tmp2,",");
+				p3=strtok(str_tmp3,",");
+				p4=strtok(str_tmp4,",");
+				p5=strtok(str_tmp5,",");
 				cnt=0;
-				while(p!=NULL){
-					frame_64[cnt].data[0]=(int)(atof(p)*10+0.5);
-					frame_64[cnt].data[1]=(int)(atof(p)*10+0.5)>>8;
+				while(p1!=NULL&p2!=NULL&p3!=NULL&p4!=NULL&p5!=NULL){
+					frame_64[cnt].can_id  = cnt+4;
+					frame_64[cnt].can_dlc = 8;
+					frame_64[cnt].data[0]=(int)(atof(p1)*10+0.5);
+					frame_64[cnt].data[1]=(int)(atof(p1)*10+0.5)>>8|(((int)(atof(p2)*10))<<2);
+					frame_64[cnt].data[2]=((int)(atof(p2)*10))>>6|(((int)(atof(p3)*2))<<5);
+					frame_64[cnt].data[3]=((int)(atof(p3)*2))>>3|(((int)(atof(p4)*20+0.5))<<1);
+					frame_64[cnt].data[4]=((int)(atof(p4)*20+0.5))>>7|(((int)(atof(p5)*100+0.5))<<3);
+					frame_64[cnt].data[5]=((int)(atof(p5)*100+0.5))>>5;
+					frame_64[cnt].data[6]=((int)(atof(p5)*100+0.5))>>13;
+					frame_64[cnt].data[7]=0;
+					write(s, &frame_64[cnt], sizeof(struct can_frame));
+					p1=strtok(NULL,",");
+					p2=strtok(NULL,",");
+					p3=strtok(NULL,",");
+					p4=strtok(NULL,",");
+					p5=strtok(NULL,",");
 					cnt++;
-					p=strtok(NULL,",");
 				}
-				
-				fgets(str_tmp,1024,Radar_Range_File);//0~200
-				p=strtok(str_tmp,",");
-				cnt=0;
-				while(p!=NULL){
-					frame_64[cnt].data[1]=frame_64[cnt].data[1]|(((int)(atof(p)*10))<<2);
-					frame_64[cnt].data[2]=((int)(atof(p)*10))>>6;
-					cnt++;
-					p=strtok(NULL,",");
-				}
-
-				fgets(str_tmp,1024,Radar_Width_File);
-				p=strtok(str_tmp,",");
-				cnt=0;
-				while(p!=NULL){
-					frame_64[cnt].data[2]=frame_64[cnt].data[2]|(((int)(atof(p)*2))<<5);
-					frame_64[cnt].data[3]=((int)(atof(p)*2))>>3;
-					cnt++;
-					p=strtok(NULL,",");
-				}
-
-
-				fgets(str_tmp,1024,Radar_RangeAccel_File);
-				p=strtok(str_tmp,",");
-				cnt=0;
-				while(p!=NULL){
-					frame_64[cnt].data[3]=frame_64[cnt].data[3]|(((int)(atof(p)*20+0.5))<<1);
-					frame_64[cnt].data[4]=((int)(atof(p)*20+0.5))>>7;
-					cnt++;
-					p=strtok(NULL,",");
-				}
-
-				fgets(str_tmp,1024,Radar_RangeRate_File);
-				p=strtok(str_tmp,",");
-				cnt=0;
-				while(p!=NULL){
-					frame_64[cnt].data[4]=frame_64[cnt].data[4]|(((int)(atof(p)*10+0.5))<<3);
-					frame_64[cnt].data[5]=((int)(atof(p)*10+0.5))>>5;
-					frame_64[cnt].data[6]=((int)(atof(p)*10+0.5))>>13;
-					cnt++;
-					p=strtok(NULL,",");
-				}
-
-
-				for(int j=0;j<64;j++){
-					write(s, &frame_64[j], sizeof(struct can_frame));
-					usleep(1);
-				}
-				
 			}	
 			if(j<8) j++;
 			else if (j==8){
