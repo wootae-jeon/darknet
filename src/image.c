@@ -25,7 +25,7 @@
 #define __MAX(a,b) (((a)>(b))?(a):(b))
 #define __MIN(a,b) (((a)<(b))?(a):(b))
 
-#define array_size 10
+#define array_size 20
 struct can_frame frames[2][array_size];
 struct object_info{
 	int left;
@@ -467,7 +467,18 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
     cnts.all_left_cnt = 0;
     cnts.all_center_cnt = 0;
     cnts.all_right_cnt = 0;
-
+    if (gt_flag == true){
+	// Count GT
+	for(int k=0;k<label_cnt;k++){
+	    if (atoi(pred_box[k][0]) == 0){
+		cnts.gt_left_cnt = 1;
+	    } else if (atoi(pred_box[k][0]) == 1){
+		cnts.gt_center_cnt = 1;
+	    } else if (atoi(pred_box[k][0]) == 2){
+		cnts.gt_right_cnt = 1;
+	    }
+	}
+    }
     for(i = 0; i < num; ++i){ //num=nboxes
         char labelstr[4096] = {0};
         int class = -1;
@@ -510,17 +521,6 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
             if(bot > im.h-1) bot = im.h-1;
 
             if (gt_flag == true){
-                // Count GT
-                for(int k=0;k<label_cnt;k++){
-                    if (atoi(pred_box[k][0]) == 0){
-                        cnts.gt_left_cnt = 1;
-                    } else if (atoi(pred_box[k][0]) == 1){
-                        cnts.gt_center_cnt = 1;
-                    } else if (atoi(pred_box[k][0]) == 2){
-                        cnts.gt_right_cnt = 1;
-                    }
-                }
-
                 bool left_check = false;
                 bool center_check = false;
                 bool right_check = false;
