@@ -15,7 +15,7 @@ extern "C" {
 
 #ifdef OPENCV
 void *open_video_stream(const char *f, int c, int w, int h, int fps);
-void *open_video_stream_cam_fps(const char *f, int c, int w, int h, int fps,float *camera_fps);
+void *open_video_stream_cam_fps(const char *f, int c, int w, int h, int fps,float *camera_fps,int opencv_buffer_size);
 image get_image_from_stream(void *p);
 image get_image_from_stream_timestamp(void *p,double *frame_timestamp,int buff_index);
 image load_image_cv(char *filename, int channels);
