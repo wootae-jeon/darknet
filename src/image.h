@@ -20,7 +20,6 @@ image get_image_from_stream(void *p);
 image get_image_from_stream_timestamp(void *p,double *frame_timestamp,int buff_index);
 image load_image_cv(char *filename, int channels);
 int show_image_cv(image im, const char* name, int ms);
-void *set_opencv_buffer_size(void *p,int buffer_size); //add by wootae
 #endif
 
 float get_color(int c, int x, int max);

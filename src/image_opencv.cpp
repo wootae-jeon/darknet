@@ -73,8 +73,8 @@ void *open_video_stream(const char *f, int c, int w, int h, int fps)
     else cap = new VideoCapture(c);
     if(!cap->isOpened()) return 0;
     if(w) cap->set(CV_CAP_PROP_FRAME_WIDTH, w);
-    if(h) cap->set(CV_CAP_PROP_FRAME_HEIGHT, w);
-    if(fps) cap->set(CV_CAP_PROP_FPS, w);
+    if(h) cap->set(CV_CAP_PROP_FRAME_HEIGHT, h);
+    if(fps) cap->set(CV_CAP_PROP_FPS, fps);
     return (void *) cap;
 }
 
@@ -109,13 +109,6 @@ image get_image_from_stream_timestamp(void *p,double *frame_timestamp,int buff_i
     if(m.empty()) return make_empty_image(0,0,0);
     *(frame_timestamp+buff_index)=cap->get(CV_CAP_PROP_POS_MSEC);
     return mat_to_image(m);
-}
-
-void *set_opencv_buffer_size(void *p,int buffer_size) //add by wootae
-{
-	VideoCapture *cap= (VideoCapture *)p;
-	cap->set(CV_CAP_PROP_SYNC_FETCH,buffer_size);
-	return (void *) cap;
 }
 
 image load_image_cv(char *filename, int channels)

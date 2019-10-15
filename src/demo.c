@@ -16,8 +16,8 @@
 #ifdef OPENCV
 
 #define iteration 100
-#define start_log 10
-#define cycle 4
+#define start_log 25
+#define cycle 3
 
 static char **demo_names;
 static image **demo_alphabet;
@@ -289,7 +289,6 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 	sleep_time=0;
 
 	for(int iter=0;iter<cycle;iter++){
-		//if(iter==0) set_opencv_buffer_size(cap,1);
 		while(!demo_done){
 			if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
 			if(!apply_offset_) if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
@@ -310,7 +309,7 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 				slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
 			if(count==(iteration+start_log-1)){
 				FILE *fp;
-				char s1[35]="191008/offset_";
+				char s1[35]="191016/offset_";
 				char s2[4];
 				sprintf(s2,"%d",sleep_time);
 				char s3[5]=".csv";
@@ -332,15 +331,14 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 				fclose(fp);
 				if(apply_offset){
 					if(iter==0)
-						sleep_time=(int)detect_sum[0]/iteration-1000./(2*(int)(camera_fps));
+						sleep_time=(int)detect_sum[0]/iteration-(int)(1000./(2*camera_fps));
 					else if (iter>0) 
-						sleep_time=(int)detect_sum[1]/iteration-1000./(2*(int)(camera_fps));
-					break;
+						sleep_time=(int)detect_sum[1]/iteration-(int)(1000./(2*camera_fps));
 				}
+				break;
 			}
 			count++;
 	    	buff_index = (buff_index + 1) %3;
-
 		}
 		count=0;
 	}
