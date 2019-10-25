@@ -15,7 +15,7 @@
 
 #ifdef OPENCV
 
-#define iteration 100
+#define iteration 1000
 #define start_log 25
 #define cycle 3
 
@@ -309,7 +309,7 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 				slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
 			if(count==(iteration+start_log-1)){
 				FILE *fp;
-				char s1[35]="191016/offset_";
+				char s1[35]="191025/3/offset_";
 				char s2[4];
 				sprintf(s2,"%d",sleep_time);
 				char s3[5]=".csv";
@@ -331,10 +331,26 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 				fclose(fp);
 				if(apply_offset){
 					if(iter==0)
-						sleep_time=(int)detect_sum[0]/iteration-(int)(1000./(2*camera_fps));
-					else if (iter>0) 
-						sleep_time=(int)detect_sum[1]/iteration-(int)(1000./(2*camera_fps));
+						sleep_time=(int)detect_sum[0]/iteration;
+					else if (iter==1){
+						int n;
+						int temp_sleep_time;
+						int old_sleep_time=sleep_time;
+						//for(n=1;((old_sleep_time+image_waiting_sum[1]/iteration-n*1000./camera_fps)>(detect_sum[1]/iteration))|display_sum[1]/iteration<(fetch_sum[1]/iteration-n*1000./camera_fps);n++)
+						for(n=1;((old_sleep_time+image_waiting_sum[1]/iteration-n*1000./camera_fps)>(detect_sum[1]/iteration));n++)
+							sleep_time=old_sleep_time+image_waiting_sum[1]/iteration-(n+0.5)*1000./(camera_fps);
+					}
 				}
+//				if(apply_offset){
+//					if(iter==0)
+//						sleep_time=(int)detect_sum[0]/iteration-(int)(1000./(2*camera_fps));
+//					else if (iter==1){ 
+//						int n;
+//						//sleep_time=(int)detect_sum[1]/iteration-(int)(1000./(2*camera_fps));
+//						for(n=1;(display_sum[1]/iteration<(fetch_sum[1]/iteration-n*1000./camera_fps));n++)
+//							sleep_time=display_sum[1]/iteration+image_waiting_sum[1]/iteration-(n+0.5)*1000./(camera_fps);
+//					}
+//				}
 				break;
 			}
 			count++;
