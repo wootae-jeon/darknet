@@ -15,9 +15,9 @@
 
 #ifdef OPENCV
 
-#define iteration 1000
-#define start_log 25
-#define cycle 3
+#define iteration 20
+#define start_log 10
+//#define cycle 3
 
 static char **demo_names;
 static image **demo_alphabet;
@@ -46,9 +46,9 @@ static double image_cycle_array[iteration];
 static double fetch_array[iteration];
 static double detect_array[iteration];
 static double display_array[iteration];
-static double slack[iteration];
+static double slack_array[iteration];
 static double fps_array[iteration];
-static double latency[iteration];
+static double latency_array[iteration];
 
 static int count=0;
 
@@ -64,9 +64,12 @@ static double fetch_start;
 static double fetch_time;
 static double image_waiting_time;
 static double image_cycle;
+static double latency;
+static double slack;
 static double before_image_waiting_time; //edit jang
 static int sleep_time;
 int apply_offset_=0;
+static int curr_cycle=0;
 
 double gettimeafterboot()
 {
@@ -150,29 +153,38 @@ void *detect_in_thread(void *ptr)
     demo_index = (demo_index + 1)%demo_frame;
     running = 0;
 	detect_end=gettimeafterboot();
+	//detect_time=detect_end-detect_start;
+	//if(count>=start_log) detect_array[count-start_log]=detect_time;
+	if(count>=start_log) {
 	detect_time=detect_end-detect_start;
-	if(count>=start_log) detect_array[count-start_log]=detect_time;
-    return 0;
+	detect_array[count-start_log]=detect_time;
+	} 
+	return 0;
 }
 
 void *fetch_in_thread(void *ptr)
 {
-	usleep(sleep_time*1000);
+	if(apply_offset_) usleep(sleep_time*1000);
+	else {};
 	fetch_start=gettimeafterboot();
     free_image(buff[buff_index]);
 //    buff[buff_index] = get_image_from_stream(cap);
     buff[buff_index] = get_image_from_stream_timestamp(cap,frame_timestamp,buff_index);
-	image_waiting_time=frame_timestamp[buff_index]-fetch_start;  //edit jang
-	image_cycle=frame_timestamp[buff_index]-before_image_waiting_time;
-	before_image_waiting_time = frame_timestamp[buff_index];
+	//image_waiting_time=frame_timestamp[buff_index]-fetch_start;  //edit jang
+	//image_cycle=frame_timestamp[buff_index]-before_image_waiting_time;
+	//before_image_waiting_time = frame_timestamp[buff_index];
 
     if(buff[buff_index].data == 0) {
         demo_done = 1;
         return 0;
     }
     letterbox_image_into(buff[buff_index], net->w, net->h, buff_letter[buff_index]);
-	fetch_time=gettimeafterboot()-fetch_start;
+	//fetch_time=gettimeafterboot()-fetch_start;
 	if(count>=start_log){
+		fetch_time=gettimeafterboot()-fetch_start;
+		image_waiting_time=frame_timestamp[buff_index]-fetch_start;  //edit jang
+		image_cycle=frame_timestamp[buff_index]-before_image_waiting_time;
+		before_image_waiting_time = frame_timestamp[buff_index];
 		fetch_array[count-start_log]=fetch_time;
 		image_waiting_array[count-start_log]=image_waiting_time;
 		image_cycle_array[count-start_log]=image_cycle;
@@ -201,14 +213,19 @@ void *display_in_thread(void *ptr)
         if(demo_hier <= .0) demo_hier = .0;
     }
 
-	double now_time=gettimeafterboot();
-	display_time=now_time-detect_end;
+	//double now_time=gettimeafterboot();
+	//display_time=now_time-detect_end;
 	if(count>=start_log){
+		double now_time=gettimeafterboot();
+		display_time=now_time-detect_end;
 		fps_array[count-start_log]=fps;
-		if(!apply_offset_) latency[count-start_log]=now_time-frame_timestamp[(buff_index+1)%3];
-		else latency[count-start_log]=now_time-frame_timestamp[(buff_index+2)%3];
+		//if(!apply_offset_) latency[count-start_log]=now_time-frame_timestamp[(buff_index+1)%3];
+		//else latency[count-start_log]=now_time-frame_timestamp[(buff_index+2)%3];
+		if(!apply_offset_) latency=now_time-frame_timestamp[(buff_index+1)%3];
+		else latency=now_time-frame_timestamp[(buff_index+2)%3];
 		display_array[count-start_log]=display_time;
-		printf("latency[%d]: %f\n",count-start_log,latency[count-start_log]);
+		latency_array[count-start_log]=latency;
+		printf("latency: %f\n",latency);
 		printf("count : %d\n",count);
 	}
     return 0;
@@ -277,18 +294,18 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
     //demo_time = what_time_is_it_now();
 	demo_time=gettimeafterboot();
 	
-	double image_waiting_sum[cycle]={0};
-	double fetch_sum[cycle]={0};
-	double detect_sum[cycle]={0};
-	double display_sum[cycle]={0};
-	double slack_sum[cycle]={0};
-	double fps_sum[cycle]={0};
-	double latency_sum[cycle]={0};
-	double image_cycle_sum[cycle]={0};
+//	double image_waiting_sum[cycle]={0};
+//	double fetch_sum[cycle]={0};
+//	double detect_sum[cycle]={0};
+//	double display_sum[cycle]={0};
+//	double slack_sum[cycle]={0};
+//	double fps_sum[cycle]={0};
+//	double latency_sum[cycle]={0};
+//	double image_cycle_sum[cycle]={0};
 
 	sleep_time=0;
 
-	for(int iter=0;iter<cycle;iter++){
+//	for(curr_cycle=0;curr_cycle<cycle;curr_cycle++){
 		while(!demo_done){
 			if(pthread_create(&fetch_thread, 0, fetch_in_thread, 0)) error("Thread creation failed");
 			if(!apply_offset_) if(pthread_create(&detect_thread, 0, detect_in_thread, 0)) error("Thread creation failed");
@@ -305,69 +322,58 @@ void demo_with_opencv(char *cfgfile, char *weightfile, float thresh, int cam_ind
 	        }
 	        pthread_join(fetch_thread, 0);
 	        if(!apply_offset_) pthread_join(detect_thread, 0);
-			if(count>=start_log)
-				slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
-			if(count==(iteration+start_log-1)){
-				FILE *fp;
-				char s1[35]="191025/3/offset_";
-				char s2[4];
-				sprintf(s2,"%d",sleep_time);
-				char s3[5]=".csv";
-				strcat(s1,s2);
-				strcat(s1,s3);
-				
-				fp=fopen(s1,"w+");
-				for(int i=0;i<iteration;i++){
-					image_waiting_sum[iter]+=image_waiting_array[i];
-					fetch_sum[iter]+=fetch_array[i];
-					detect_sum[iter]+=detect_array[i];
-					display_sum[iter]+=display_array[i];
-					slack_sum[iter]+=slack[i];
-					fps_sum[iter]+=fps_array[i];
-					latency_sum[iter]+=latency[i];
-					image_cycle_sum[iter]+=image_cycle_array[i];
-					fprintf(fp,"%f,%f,%f,%f,%f,%f,%f,%f\n",image_waiting_array[i],fetch_array[i],detect_array[i],	display_array[i],slack[i],fps_array[i],latency[i],image_cycle_array[i]);
-				}
-				fclose(fp);
+			printf("sleep : %d\n", sleep_time);
+			if(count>=start_log){
+				//slack[count-start_log]=(detect_time+display_time)-(sleep_time+fetch_time);
+				slack=(detect_time+display_time)-(sleep_time+fetch_time);
+				slack_array[count-start_log]=slack;
 				if(apply_offset){
-					if(iter==0)
-						sleep_time=(int)detect_sum[0]/iteration;
-					else if (iter==1){
-						int n;
-						int temp_sleep_time;
-						int old_sleep_time=sleep_time;
-						//for(n=1;((old_sleep_time+image_waiting_sum[1]/iteration-n*1000./camera_fps)>(detect_sum[1]/iteration))|display_sum[1]/iteration<(fetch_sum[1]/iteration-n*1000./camera_fps);n++)
-						for(n=1;((old_sleep_time+image_waiting_sum[1]/iteration-n*1000./camera_fps)>(detect_sum[1]/iteration));n++)
-							sleep_time=old_sleep_time+image_waiting_sum[1]/iteration-(n+0.5)*1000./(camera_fps);
+					int n;
+					int old_sleep_time=sleep_time;
+					//for(n=1;((old_sleep_time+image_waiting_sum[1]/iteration-n*1000./camera_fps)>(detect_sum[1]/iteration));n++)
+						//sleep_time=old_sleep_time+image_waiting_sum[1]/iteration-(n+0.5)*1000./(camera_fps);
+					if((old_sleep_time+fetch_time)<(detect_time+display_time)){ 
+						sleep_time+=1000./(camera_fps);
+					}else{
+						for(n=1;((old_sleep_time+image_waiting_time-n*1000./camera_fps)>(detect_time));n++){
+							printf("hihi\n");	
+							sleep_time=old_sleep_time+image_waiting_time-(n+0.5)*1000./(camera_fps);
+						}
 					}
-				}
-//				if(apply_offset){
-//					if(iter==0)
-//						sleep_time=(int)detect_sum[0]/iteration-(int)(1000./(2*camera_fps));
-//					else if (iter==1){ 
-//						int n;
-//						//sleep_time=(int)detect_sum[1]/iteration-(int)(1000./(2*camera_fps));
-//						for(n=1;(display_sum[1]/iteration<(fetch_sum[1]/iteration-n*1000./camera_fps));n++)
-//							sleep_time=display_sum[1]/iteration+image_waiting_sum[1]/iteration-(n+0.5)*1000./(camera_fps);
+//					if((old_sleep_time+fetch_time)<(detect_time+display_time)){ 
+//						old_sleep_time=detect_time;
+//						sleep_time=detect_time;
 //					}
-//				}
-				break;
+					
+				}
+			printf("image_waiting : %f\n",image_waiting_time);
+			printf("fetch : %f\n",fetch_time);
+			printf("detect : %f\n",detect_time);
+			printf("display : %f\n",display_time);
+			printf("slack : %f\n",slack);
+			printf("fps : %f\n",fps);
+			printf("latency : %f\n",latency);
+			printf("image_cycle : %f\n",image_cycle);
 			}
-			count++;
-	    	buff_index = (buff_index + 1) %3;
+		if(count==iteration+start_log){
+			FILE *fp;
+			char s1[35]="191025/auto_10";
+			char s2[5]=".csv";
+			strcat(s1,s2);
+			fp=fopen(s1,"w+");
+	
+
+			for(int i=0;i<iteration;i++){
+				//fprintf(fp,"%f,%f,%f,%f,%f,%f,%f,%f\n",image_waiting_array[i],fetch_array[i],detect_array[i],	display_array[i],slack_array[i],fps_array[i],latency_array[i],image_cycle_array[i]);
+				fprintf(fp,"%f,%f\n",latency_array[i],fps_array[i]);
+				printf("latency[%d] : %f\n",i, latency_array[i]);
+			}
+			fclose(fp);
+			break;
 		}
-		count=0;
-	}
-	for(i=0; i<cycle;i++){
-		printf("avg_image_waiting[%d] : %f\n",i,image_waiting_sum[i]/iteration);
-		printf("avg_fetch[%d] : %f\n",i,fetch_sum[i]/iteration);
-		printf("avg_detect[%d] : %f\n",i,detect_sum[i]/iteration);
-		printf("avg_display[%d] : %f\n",i,display_sum[i]/iteration);
-		printf("avg_slack[%d] : %f\n",i,slack_sum[i]/iteration);
-		printf("avg_fps[%d] : %f\n",i,fps_sum[i]/iteration);
-		printf("avg_latency[%d] : %f\n",i,latency_sum[i]/iteration);
-		printf("avg_image_cycle[%d] : %f\n",i,image_cycle_sum[i]/iteration);
-	}
+		count++;
+	   	buff_index = (buff_index + 1) %3;
+		}
 }
 /*
    void demo_compare(char *cfg1, char *weight1, char *cfg2, char *weight2, float thresh, int cam_index, const char *filename, char **names, int classes, int delay, char *prefix, int avg_frames, float hier, int w, int h, int frames, int fullscreen)
