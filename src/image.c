@@ -649,10 +649,10 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
         }//(class >=0)
     }//(i < num(nboxes)) 
 	//standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	//float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
 	//printf("cnt : %d, timestamp[%d]: %d, timestamp[%d]: %d, gap : %f\n",cnt,cnt,timestamp[cnt],cnt+1,timestamp[cnt+1],gap);
-	standard_time+=gap;
-	cnt++;
+	//standard_time+=gap;
+	//cnt++;
 	prior_object_number=now_object_number;
 	for(int k=0;k<array_size;k++){
 		if(!id_array[frame_index][k]){
@@ -675,6 +675,20 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 //		printf("%d, ",id_array[frame_index][z]);
 //	}
 	frame_index=(frame_index+1)%2;
+	while(1){
+		if(what_time_is_it_now()>standard_time){
+			printf("curr time :  %f\n",what_time_is_it_now()*1000);
+			//printf("stand time : %f\n",standard_time*1000);
+			break;
+		}else{
+			printf("usleep\n");
+			usleep((standard_time-what_time_is_it_now())*1000000);
+			continue;
+		}
+	}
+	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	standard_time+=gap;
+	cnt++;
 	//close(sw);
 	return cnts;
 }

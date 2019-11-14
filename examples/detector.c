@@ -642,14 +642,14 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
             all_right_cnt += cnts.all_right_cnt;
 
             printf("*--Accuracy [#Pred/#GT]-----*\n");
-            printf("Left   Car : [%d/%d] \n", left_cnts, gt_left_cnt);
-            printf("Center Car : [%d/%d] \n", center_cnts, gt_center_cnt);
-            printf("Right  Car : [%d/%d] \n", right_cnts, gt_right_cnt);
+            printf("FVL : [%d/%d] \n", left_cnts, gt_left_cnt);
+            printf("FVI : [%d/%d] \n", center_cnts, gt_center_cnt);
+            printf("FVR : [%d/%d] \n", right_cnts, gt_right_cnt);
 
             printf("*--Accuracy [#Pred/#ALL Pred]-----*\n");
-            printf("Left   Car : [%d/%d] \n", left_cnts, all_left_cnt);
-            printf("Center Car : [%d/%d] \n", center_cnts, all_center_cnt);
-            printf("Right  Car : [%d/%d] \n", right_cnts, all_right_cnt);
+            printf("FVL : [%d/%d] \n", left_cnts, all_left_cnt);
+            printf("FVI : [%d/%d] \n", center_cnts, all_center_cnt);
+            printf("FVR : [%d/%d] \n", right_cnts, all_right_cnt);
 
 	        free_detections(dets, nboxes);
 	        if(outfile){
