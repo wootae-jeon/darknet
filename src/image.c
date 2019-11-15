@@ -40,14 +40,14 @@ char id_array[2][array_size]={0};
 int prior_object_number=0;
 int frame_index=0;
 int For_Sync=1;
-int cnt=0;
-double standard_time=0;
+//int cnt=0;
+//double standard_time=0;
 int sw;
 
-char *p;
+//char *p;
 int curr_timestamp;
 int prev_timestamp;
-int timestamp[1103]={0};
+//int timestamp[1103]={0};
 
 
 int windows = 0;
@@ -342,14 +342,11 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
         fclose(fp);
     }
 
-	//Read File
-	char str_tmp[1024];
-	FILE *Image_time_File=fopen("FrontLeft.txt","r");
 	//CAN COMMUNICATION variables
 	int FVR=0;
 	int FVI=0;
 	int FVL=0;
-	int sr;
+	//int sr;
 	struct sockaddr_can addr;
 
 	struct can_frame frame;
@@ -371,22 +368,8 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 
 	//object tracking
 	int now_object_number=0;
+	
 	if(For_Sync){
-	if((sr=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
-		perror("Error while opening socket");
-	}
-	struct can_filter rfilter[4];
-	rfilter[0].can_id=0x7ff;	
-	rfilter[0].can_mask=CAN_SFF_MASK;
-	setsockopt(sr,SOL_CAN_RAW,CAN_RAW_FILTER,&rfilter,sizeof(rfilter));
-	strcpy(ifr.ifr_name,ifname);
-	ioctl(sr, SIOCGIFINDEX,&ifr);
-	addr.can_family=AF_CAN;
-	addr.can_ifindex=ifr.ifr_ifindex;
-
-	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
-		perror("Error in socket bind");
-	}
 	if((sw=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
 		perror("Error while opening socket");
 	}
@@ -397,65 +380,10 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 	if(bind(sw,(struct sockaddr *)&addr,sizeof(addr))<0) {
 		perror("Error in socket bind");
 	}
+	For_Sync=0;
 	}
 
 
-	//trigger by sensor data
-	while(For_Sync){
-		if(Image_time_File!=NULL){
-			while(!feof(Image_time_File)){
-				if(fgets(str_tmp,1024,Image_time_File)==NULL) break;
-				//fgets(curr_timestamp,1024,Image_time_File);
-				p=strtok(str_tmp," ");
-				p=strtok(NULL," ");
-				p=strtok(NULL," ");
-				p=strtok(NULL," ");
-
-				timestamp[cnt++]=atoi(p);
-				//printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
-				//cnt++;
-
-				while(p!=NULL){
-					p=strtok(NULL," ");
-				}
-				//if(For_Sync) {prev_timestamp=curr_timestamp-100;}
-			}
-			cnt=0;
-		}
-
-
-
-		int rd_size;
-		rd_size=read(sr,&frame,sizeof(struct can_frame));
-
-		if(0>rd_size) fprintf(stderr,"read error");
-		else if (rd_size<sizeof(struct can_frame)) fprintf(stderr,"read: incomplete CAN frame\n");
-		else{
-			if(frame.can_id==0x7ff)
-			{
-				For_Sync=0;
-				if(frame.can_id&CAN_RTR_FLAG){
-					printf("remote request\n");
-					fflush(stdout);
-				}
-				standard_time=what_time_is_it_now();
-				close(sr);
-				break;
-			}
-		}
-	}
-	
-	while(1){
-		if(what_time_is_it_now()>standard_time){
-			printf("curr time :  %f\n",what_time_is_it_now()*1000);
-			//printf("stand time : %f\n",standard_time*1000);
-			break;
-		}else{
-			printf("usleep\n");
-			usleep((standard_time-what_time_is_it_now())*1000000);
-			continue;
-		}
-	}
 	frame.can_dlc=8;
     car_cnt cnts;
     cnts.gt_left_cnt = 0;
@@ -648,11 +576,7 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 			
         }//(class >=0)
     }//(i < num(nboxes)) 
-	//standard_time+=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	//float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	//printf("cnt : %d, timestamp[%d]: %d, timestamp[%d]: %d, gap : %f\n",cnt,cnt,timestamp[cnt],cnt+1,timestamp[cnt+1],gap);
-	//standard_time+=gap;
-	//cnt++;
+
 	prior_object_number=now_object_number;
 	for(int k=0;k<array_size;k++){
 		if(!id_array[frame_index][k]){
@@ -666,29 +590,7 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 			usleep(2);
 		}
 	}
-//	printf("object_info[%d].id\n",frame_index);
-//	for(int z=0;z<array_size;z++){
-//		printf("%d, ",object_info[frame_index][z].id);
-//	}
-//	printf("\nid_array[%d]\n",frame_index);
-//	for(int z=0;z<array_size;z++){
-//		printf("%d, ",id_array[frame_index][z]);
-//	}
-	frame_index=(frame_index+1)%2;
-	while(1){
-		if(what_time_is_it_now()>standard_time){
-			printf("curr time :  %f\n",what_time_is_it_now()*1000);
-			//printf("stand time : %f\n",standard_time*1000);
-			break;
-		}else{
-			printf("usleep\n");
-			usleep((standard_time-what_time_is_it_now())*1000000);
-			continue;
-		}
-	}
-	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
-	standard_time+=gap;
-	cnt++;
+
 	//close(sw);
 	return cnts;
 }

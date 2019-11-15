@@ -1,5 +1,13 @@
 #include "darknet.h"
 #include <dirent.h>
+#include <unistd.h>
+#include <net/if.h>
+#include <sys/types.h>
+#include <sys/ioctl.h>
+#include <sys/socket.h>
+#include <linux/can.h>
+#include <linux/can/raw.h>
+
 
 
 static int coco_ids[] = {1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90};
@@ -590,6 +598,21 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 
     char out_buff[256];
     char *out_p = out_buff;
+//Read File
+    char str_tmp[1024];
+    FILE *Image_time_File=fopen("FrontLeft.txt","r");	
+    int timestamp[1103]={0};
+    char *p;
+    int cnt=0;
+    double standard_time=0;
+	//CAN read variables
+    	int sr;
+	struct sockaddr_can addr;
+
+	struct can_frame frame;
+	struct ifreq ifr;
+	const char *ifname="can0";
+	frame.can_dlc=8;
 
 	opendir(filename);
 	
@@ -597,10 +620,65 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 	int count;
 	int idx;
 	count=scandir(filename,&namelist,NULL,alphasort);
+	//CAN read init
+	if((sr=socket(PF_CAN,SOCK_RAW,CAN_RAW))<0){
+		perror("Error while opening socket");
+	}
+	struct can_filter rfilter[4];
+	rfilter[0].can_id=0x7ff;	
+	rfilter[0].can_mask=CAN_SFF_MASK;
+	setsockopt(sr,SOL_CAN_RAW,CAN_RAW_FILTER,&rfilter,sizeof(rfilter));
+	strcpy(ifr.ifr_name,ifname);
+	ioctl(sr, SIOCGIFINDEX,&ifr);
+	addr.can_family=AF_CAN;
+	addr.can_ifindex=ifr.ifr_ifindex;
 
+	if(bind(sr,(struct sockaddr *)&addr,sizeof(addr))<0) {
+		perror("Error in socket bind");
+	}
+	
+	if(Image_time_File!=NULL){
+		while(!feof(Image_time_File)){
+			if(fgets(str_tmp,1024,Image_time_File)==NULL) break;
+			//fgets(curr_timestamp,1024,Image_time_File);
+			p=strtok(str_tmp," ");
+			p=strtok(NULL," ");
+			p=strtok(NULL," ");
+			p=strtok(NULL," ");
+
+			timestamp[cnt++]=atoi(p);
+			//printf("timestamp[%d] : %d\n",cnt,timestamp[cnt]);
+			//cnt++;
+
+			while(p!=NULL){
+				p=strtok(NULL," ");
+			}
+		}
+		cnt=0;
+	}
     make_window("predictions", 512, 512, 0);
+	while(1){
+		int rd_size;
+		rd_size=read(sr,&frame,sizeof(struct can_frame));
 
-	for(idx=0;idx<count;idx++){
+		if(0>rd_size) fprintf(stderr,"read error");
+		else if (rd_size<sizeof(struct can_frame)) fprintf(stderr,"read: incomplete CAN frame\n");
+		else{
+			if(frame.can_id==0x7ff)
+			{
+				if(frame.can_id&CAN_RTR_FLAG){
+					printf("remote request\n");
+					fflush(stdout);
+				}
+				//standard_time=what_time_is_it_now();
+				close(sr);
+				break;
+			}
+		}
+	}
+	standard_time=what_time_is_it_now();
+	for(idx=2;idx<count;idx++){
+	        time=what_time_is_it_now();
 		if(namelist[idx]->d_type==DT_REG){	
 			strncpy(input, filename, 256);
 			strcat(input,"/");
@@ -619,9 +697,9 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
  			strcat(gt_input,".txt");
 
 	        float *X = sized.data;
-	        time=what_time_is_it_now();
+	        //time=what_time_is_it_now();
 	        network_predict(net, X);
-	        printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
+	        //printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
 	   //   printf("%s\n", input);
 	        int nboxes = 0;
 	        detection *dets = get_network_boxes(net, im.w, im.h, thresh, hier_thresh, 0, 1, &nboxes);
@@ -670,6 +748,22 @@ void test_detector(char *datacfg, char *cfgfile, char *weightfile, char *filenam
 			printf("\n\n");
 			free(namelist[idx]);
 		}
+	        printf("%s: Predicted in %f seconds.\n", input, what_time_is_it_now()-time);
+	while(1){
+		if(what_time_is_it_now()>standard_time){
+			printf("curr time :  %f\n",what_time_is_it_now()*1000);
+			//printf("stand time : %f\n",standard_time*1000);
+			break;
+		}else{
+			printf("usleep\n");
+			usleep((standard_time-what_time_is_it_now())*1000000);
+			continue;
+		}
+	}
+	float gap=((timestamp[cnt+1]-timestamp[cnt])*0.001);
+	standard_time+=gap;
+	cnt++;
+	
     }
     free(namelist);
 }
