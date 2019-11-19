@@ -591,6 +591,7 @@ car_cnt draw_detections(image im, char *gt_input, detection *dets, int num, floa
 		}
 	}
 
+	frame_index=(frame_index+1)%2;
 	//close(sw);
 	return cnts;
 }
